@@ -3,7 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import mysql.connector
-from flask import request, session
+from flask import request, session, Blueprint, g
 from flask_bcrypt import Bcrypt
 
 load_dotenv()
@@ -241,6 +241,95 @@ def get_leagues():
     finally:
         cursor.close()
         conn.close()
+
+@app.route('/api/league/search', methods=['GET'])
+@login_required # Still requires a user to be logged in to search
+def search_leagues():
+    """Retrieves all leagues, optionally filtered by name or year."""
+    
+    # Get optional query parameters
+    search_term = request.args.get('q', '')
+    season_year = request.args.get('year', '')
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    
+    # Base query: select all leagues
+    query = "SELECT league_id, name, season_year, status FROM League WHERE 1=1 "
+    params = []
+    
+    # Add filters based on query parameters
+    if search_term:
+        query += "AND name LIKE %s "
+        params.append(f"%{search_term}%")
+    
+    if season_year and season_year.isdigit():
+        query += "AND season_year = %s "
+        params.append(season_year)
+
+    query += "ORDER BY season_year DESC, name ASC;"
+
+    try:
+        cursor.execute(query, tuple(params))
+        leagues = cursor.fetchall()
+        
+        # NOTE: In a real system, you would exclude leagues the user is already in.
+        # For now, we return all matching leagues.
+        
+        return jsonify(leagues), 200
+        
+    except mysql.connector.Error as err:
+        return jsonify({"error": f"Error executing query: {err}"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/api/league/<int:league_id>/join', methods=['POST'])
+@login_required
+def join_league(league_id):
+    """Assigns the logged-in user the 'TeamOwner' role in the specified league."""
+    user_id = session.get('user_id') 
+
+    if not user_id:
+        # This is caught by @login_required, but serves as a safeguard
+        return jsonify({"error": "User not logged in or session expired"}), 401
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Check if the user is already assigned to this league
+        check_query = "SELECT role FROM RoleAssignment WHERE user_id = %s AND league_id = %s"
+        cursor.execute(check_query, (user_id, league_id))
+        if cursor.fetchone():
+            return jsonify({"error": "You are already a member of this league."}), 409
+
+        # 2. Insert the new role assignment (defaulting to TeamOwner)
+        role_query = "INSERT INTO RoleAssignment (user_id, league_id, role) VALUES (%s, %s, %s)"
+        # Note: In a real app, 'role' might be set to 'Member' until a Team is created.
+        default_role = 'TeamOwner' 
+        cursor.execute(role_query, (user_id, league_id, default_role))
+        
+        conn.commit()
+        
+        return jsonify({
+            "message": f"Successfully joined league {league_id} as a {default_role}.", 
+            "league_id": league_id
+        }), 200
+
+    except mysql.connector.Error as err:
+        print(f"Database error during league join: {err}")
+        return jsonify({"error": "Failed to join league due to server error"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app.route('/sitemap', methods=['GET'])
 def sitemap():
@@ -546,7 +635,84 @@ def logout():
     session.clear()
     return jsonify({"message": "Successfully logged out"}), 200
 
+league_bp = Blueprint('league', __name__)
 
+
+@league_bp.route('/league/<int:league_id>/details', methods=['GET'])
+@login_required 
+def get_league_details(league_id):
+    current_user_id = session.get('user_id') 
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # 1. Get the current user's role
+        # We NO longer check for team ownership here to avoid using T.owner_id
+        role_query = "SELECT role FROM RoleAssignment WHERE user_id = %s AND league_id = %s"
+        cursor.execute(role_query, (current_user_id, league_id))
+        user_info = cursor.fetchone()
+
+        if not user_info:
+            return jsonify({"error": "User is not a member of this league"}), 403
+
+        user_role = user_info['role'] 
+        
+        # FIX 1: Explicitly check for team ownership in a separate query to avoid JOIN issues.
+        # This query *will* still crash if you haven't added the owner_id column.
+        # If your table DOES NOT have owner_id, you must comment this block out too.
+        
+        # --- START OPTIONAL BLOCK (Keep if you added owner_id, remove if you haven't) ---
+        user_team_id = None 
+        # --- END OPTIONAL BLOCK ---
+
+        # If you haven't added owner_id to the DB yet, replace the above block with:
+        # user_team_id = None 
+        
+        # 2. Fetch the main League details
+        league_query = "SELECT name, season_year, status FROM League WHERE league_id = %s"
+        cursor.execute(league_query, (league_id,))
+        league = cursor.fetchone()
+        if not league:
+            return jsonify({"error": "League not found"}), 404
+
+        # 3. Fetch all Teams in the league, WITHOUT joining to UserAccount
+        teams_data = []
+        teams_query = """
+            SELECT 
+                T.team_id, T.team_name
+            FROM 
+                Team T
+            WHERE 
+                T.league_id = %s;
+        """
+        cursor.execute(teams_query, (league_id,))
+        teams_data = cursor.fetchall()
+        
+        # 4. Compile and return the final response
+        response_data = {
+            "league_id": league_id,
+            "league_name": league['name'],
+            "season_year": league['season_year'],
+            "status": league['status'],
+            "user_role": user_role,
+            "user_team_id": user_team_id, # Will be None if you commented out the block above
+            "teams": teams_data
+        }
+
+        return jsonify(response_data), 200
+
+    except mysql.connector.Error as err:
+        print(f"Database error in get_league_details: {err}")
+        return jsonify({"error": "Server error while fetching league details"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+app.register_blueprint(league_bp, url_prefix='/api')
 # -----------------------
 # NOTHING SHOULD BE BELOW HERE EXCEPT THIS
 # -----------------------

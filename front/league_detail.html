@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>League Detail</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        #header { background-color: #333; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        #main-content { padding: 20px; max-width: 1000px; margin: 20px auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .tab-content { padding: 15px; border: 1px solid #ddd; border-top: none; }
+        .team-item { border: 1px solid #eee; padding: 10px; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        h2 { border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+        .error { color: #dc3545; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1 id="league-name">Loading League...</h1>
+        <button id="back-to-leagues-btn">← Back to My Leagues</button>
+    </div>
+
+    <div id="main-content">
+        <div id="league-info">
+            <p>Season: <strong id="league-season"></strong> | Status: <strong id="league-status"></strong> | Your Role: <strong id="user-role"></strong></p>
+        </div>
+        
+        <div id="team-management">
+            </div>
+
+        <div class="tabs">
+            <button onclick="showTab('teams-tab')">Teams</button>
+            <button onclick="showTab('stats-tab')">Statistics</button>
+            <button onclick="showTab('record-tab')">Record Game</button>
+        </div>
+
+        <div id="teams-tab" class="tab-content">
+            <h2>All Teams</h2>
+            <div id="teams-list">
+                <p>Loading teams...</p>
+            </div>
+        </div>
+
+        <div id="stats-tab" class="tab-content" style="display:none;">
+            <h2>League Statistics</h2>
+            <p>Statistics content coming soon...</p>
+        </div>
+
+        <div id="record-tab" class="tab-content" style="display:none;">
+            <h2>Record a New Game</h2>
+            <p>Game recording form coming soon...</p>
+        </div>
+    </div>
+    
+    <script src="league_detail.js"></script> 
+    </body>
+</html>

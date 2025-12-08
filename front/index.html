@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>League Manager Login/Register</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; }
+        form { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; }
+        input { display: block; width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 15px; background: #333; color: white; border: none; cursor: pointer; }
+        .message { padding: 10px; margin-top: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <h1>League Manager Access</h1>
+    <div id="status-message" class="message" style="display:none;"></div>
+
+    <form id="register-form">
+        <h2>Register</h2>
+        <input type="text" id="reg-name" placeholder="Name" required>
+        <input type="email" id="reg-email" placeholder="Email" required>
+        <input type="password" id="reg-password" placeholder="Password" required>
+        <button type="submit">Register Account</button>
+    </form>
+
+    <form id="login-form">
+        <h2>Login</h2>
+        <input type="email" id="login-email" placeholder="Email" required>
+        <input type="password" id="login-password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+
+    <script src="script.js"></script>
+</body>
+</html>

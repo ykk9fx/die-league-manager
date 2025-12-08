@@ -1,278 +1,356 @@
-<div id="top-bar">
-    <h1>My Leagues</h1>
-    <div class="actions">
-        <button id="create-league-btn">Create New League</button>
-        <button id="show-search-modal-btn">Search & Join League</button> 
-        <button id="logout-btn">Logout</button>
-    </div>
-</div>
-
-<div id="create-league-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 101;">
-    <div style="background: white; margin: 10% auto; padding: 25px; width: 40%; border-radius: 8px;">
-        <h3>Create a New League</h3>
-        <div id="create-league-message" class="message" style="display:none;"></div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Leagues - Fantasy Manager</title>
+    <style>
+        /* Basic styling for readability and function */
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        #top-bar { background-color: #333; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .actions button { padding: 10px 15px; margin-left: 10px; cursor: pointer; border: none; border-radius: 4px; background-color: #5cb85c; color: white; }
+        .actions button:hover { opacity: 0.9; }
+        h1 { margin: 0; }
         
-        <form id="create-league-form">
-            <label for="new-league-name">League Name:</label>
-            <input type="text" id="new-league-name" required 
-                   style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc;">
-            
-            <label for="new-season-year">Season Year:</label>
-            <input type="number" id="new-season-year" required 
-                   placeholder="e.g., 2025" min="2000" 
-                   style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
-            
-            <button type="submit" style="background: #007bff; margin-right: 10px;">Create League</button>
-            <button type="button" id="close-create-league-modal-btn" style="background: #6c757d;">Cancel</button>
-        </form>
-    </div>
-</div>
+        #leagues-list { padding: 20px; max-width: 800px; margin: 20px auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .league-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }
+        .league-details h4 { margin: 0 0 5px 0; color: #007bff; }
+        
+        .message { padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
 
-<div id="search-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100;">
-    <div style="background: white; margin: 10% auto; padding: 20px; width: 50%; border-radius: 8px;">
-        <h3>Search for New Leagues</h3>
-        <form id="search-league-form">
-            <input type="text" id="search-query" placeholder="League Name (optional)" style="width: 100%; padding: 8px; margin-bottom: 10px;">
-            <input type="number" id="search-year" placeholder="Season Year (optional)" style="width: 100%; padding: 8px; margin-bottom: 10px;">
-            <button type="submit">Search</button>
-            <button type="button" id="close-search-modal-btn">Close</button>
-        </form>
-        <div id="search-results" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
-            <p>Enter search criteria above.</p>
+        /* Modal specific styling (for visibility) */
+        #create-league-modal > div, #search-modal > div { box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <h1>My Leagues</h1>
+        <div class="actions">
+            <button id="create-league-btn">➕ Create New League</button>
+            <button id="show-search-modal-btn">🔍 Search & Join League</button> 
+            <button id="logout-btn" style="background-color: #dc3545;">Logout</button>
         </div>
     </div>
-</div>
+
+    <div id="leagues-list">
+        <p>Initializing...</p>
+    </div>
+    <div id="create-league-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 101;">
+        <div style="background: white; margin: 10% auto; padding: 25px; width: 40%; border-radius: 8px;">
+            <h3>Create a New League</h3>
+            <div id="create-league-message" class="message" style="display:none;"></div>
+            
+            <form id="create-league-form">
+                <label for="new-league-name">League Name:</label>
+                <input type="text" id="new-league-name" required 
+                       style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc;">
+                
+                <label for="new-season-year">Season Year:</label>
+                <input type="number" id="new-season-year" required 
+                       placeholder="e.g., 2025" min="2000" 
+                       style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
+                
+                <button type="submit" style="background: #007bff; margin-right: 10px;">Create League</button>
+                <button type="button" id="close-create-league-modal-btn" style="background: #6c757d;">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="search-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100;">
+        <div style="background: white; margin: 10% auto; padding: 20px; width: 50%; border-radius: 8px;">
+            <h3>Search for New Leagues</h3>
+            <form id="search-league-form">
+                <input type="text" id="search-query" placeholder="League Name (optional)" style="width: 100%; padding: 8px; margin-bottom: 10px;">
+                <input type="number" id="search-year" placeholder="Season Year (optional)" style="width: 100%; padding: 8px; margin-bottom: 10px;">
+                <button type="submit">Search</button>
+                <button type="button" id="close-search-modal-btn">Close</button>
+            </form>
+            <div id="search-results" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+                <p>Enter search criteria above.</p>
+            </div>
+        </div>
+    </div>
     
     <script>
         const BASE_URL = 'http://127.0.0.1:5000/api';
-        const leaguesList = document.getElementById('leagues-list');
 
-        const searchModal = document.getElementById('search-modal');
-const showSearchModalBtn = document.getElementById('show-search-modal-btn');
-const closeSearchModalBtn = document.getElementById('close-search-modal-btn');
-const searchLeagueForm = document.getElementById('search-league-form');
-const searchResultsDiv = document.getElementById('search-results');
+        // The entire application logic is now contained within the DOMContentLoaded listener.
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // 1. DEFINE ALL DOM ELEMENT VARIABLES HERE (Local Scope)
+            const leaguesList = document.getElementById('leagues-list');
+            const searchModal = document.getElementById('search-modal');
+            const showSearchModalBtn = document.getElementById('show-search-modal-btn');
+            const closeSearchModalBtn = document.getElementById('close-search-modal-btn');
+            const searchLeagueForm = document.getElementById('search-league-form');
+            const searchResultsDiv = document.getElementById('search-results');
 
-const createLeagueModal = document.getElementById('create-league-modal');
-const createLeagueBtn = document.getElementById('create-league-btn'); // This already existed
-const closeCreateLeagueModalBtn = document.getElementById('close-create-league-modal-btn');
-const createLeagueForm = document.getElementById('create-league-form');
-const createLeagueMessage = document.getElementById('create-league-message');
+            const createLeagueModal = document.getElementById('create-league-modal');
+            const createLeagueBtn = document.getElementById('create-league-btn'); 
+            const closeCreateLeagueModalBtn = document.getElementById('close-create-league-modal-btn');
+            const createLeagueForm = document.getElementById('create-league-form');
+            const createLeagueMessage = document.getElementById('create-league-message');
 
-// --- NEW Functionality: League Search ---
+            // CRITICAL CHECK
+            if (!leaguesList) {
+                console.error("CRITICAL ERROR: 'leagues-list' element not found. Check your HTML.");
+                return; 
+            }
 
-createLeagueBtn.addEventListener('click', () => {
-    createLeagueModal.style.display = 'block';
-    createLeagueMessage.style.display = 'none'; // Clear previous messages
-    createLeagueForm.reset(); // Clear form fields
-});
+            // 2. DEFINE ALL FUNCTIONS HERE (They can now access the variables defined above)
+            
+            function navigateToLeague(leagueId) {
+                // Redirects the user to the league detail page, passing the ID
+                window.location.href = `league_detail.html?league_id=${leagueId}`;
+            }
 
-closeCreateLeagueModalBtn.addEventListener('click', () => {
-    createLeagueModal.style.display = 'none';
-});
-
-// Close modal when clicking outside (Optional, but good UX)
-createLeagueModal.addEventListener('click', (e) => {
-    if (e.target === createLeagueModal) {
-        createLeagueModal.style.display = 'none';
-    }
-});
-
-
-createLeagueForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const name = document.getElementById('new-league-name').value;
-    const season_year = document.getElementById('new-season-year').value;
-
-    createLeagueMessage.textContent = 'Creating league...';
-    createLeagueMessage.className = 'message';
-    createLeagueMessage.style.display = 'block';
-
-    try {
-        const response = await fetch(`${BASE_URL}/league`, {
-            method: 'POST',
-            mode: 'cors',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, season_year: parseInt(season_year) })
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            createLeagueMessage.textContent = `Success! ${result.message}`;
-            createLeagueMessage.className = 'message success';
-
-            // Close modal and refresh the leagues list after a short delay
-            setTimeout(() => {
-                createLeagueModal.style.display = 'none';
-                fetchAndDisplayLeagues(); 
-            }, 1500);
-
-        } else {
-            createLeagueMessage.textContent = `Error: ${result.error || 'Failed to create league.'}`;
-            createLeagueMessage.className = 'message error';
-        }
-    } catch (error) {
-        createLeagueMessage.textContent = 'Network error. Could not connect to server.';
-        createLeagueMessage.className = 'message error';
-        console.error("Create League Error:", error);
-    }
-});
-
-function renderSearchResults(leagues) {
-    searchResultsDiv.innerHTML = '';
-    if (leagues.length === 0) {
-        searchResultsDiv.innerHTML = '<p>No matching leagues found.</p>';
-        return;
-    }
-
-    leagues.forEach(league => {
-        const item = document.createElement('div');
-        item.className = 'league-item'; // Reusing existing style
-        item.style.marginBottom = '5px';
-        item.innerHTML = `
-            <div class="league-details">
-                <h4>${league.name} (${league.season_year})</h4>
-                <p>Status: ${league.status}</p>
-            </div>
-            <div class="actions">
-                <button class="join-league-btn" data-league-id="${league.league_id}">Join League</button>
-            </div>
-        `;
-        searchResultsDiv.appendChild(item);
-    });
-
-    // Add event listeners for the new "Join League" buttons
-    searchResultsDiv.querySelectorAll('.join-league-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            const leagueId = button.getAttribute('data-league-id');
-            alert(`Attempting to join League ID: ${leagueId}. (Requires JOIN API endpoint)`);
-            // TODO: Implement the POST /api/league/<id>/join endpoint
-        });
-    });
-}
-
-searchLeagueForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const query = document.getElementById('search-query').value;
-    const year = document.getElementById('search-year').value;
-    searchResultsDiv.innerHTML = '<p>Searching...</p>';
-    
-    // Construct the URL with query parameters
-    let searchUrl = `${BASE_URL}/league/search?`;
-    if (query) searchUrl += `q=${encodeURIComponent(query)}&`;
-    if (year) searchUrl += `year=${encodeURIComponent(year)}`;
-
-    try {
-        const response = await fetch(searchUrl, {
-            method: 'GET',
-            mode: 'cors',
-            credentials: 'include'
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            renderSearchResults(data);
-        } else {
-            searchResultsDiv.innerHTML = `<p class="error">Search failed: ${data.error}</p>`;
-        }
-    } catch (error) {
-        searchResultsDiv.innerHTML = '<p class="error">Network error during search.</p>';
-        console.error("Search Fetch Error:", error);
-    }
-});
-
-
-// --- Modal Visibility Handlers ---
-showSearchModalBtn.addEventListener('click', () => {
-    searchModal.style.display = 'block';
-    searchResultsDiv.innerHTML = '<p>Enter search criteria above.</p>';
-});
-
-closeSearchModalBtn.addEventListener('click', () => {
-    searchModal.style.display = 'none';
-});
-
-// Add logic to close modal when clicking outside of it
-searchModal.addEventListener('click', (e) => {
-    if (e.target === searchModal) {
-        searchModal.style.display = 'none';
-    }
-});
-
-
-// --- Initial Load ---
-document.addEventListener('DOMContentLoaded', fetchAndDisplayLeagues);
-
-        async function fetchAndDisplayLeagues() {
-            leaguesList.innerHTML = '<p>Loading leagues...</p>';
-            try {
-                const response = await fetch(`${BASE_URL}/league`, {
-                    method: 'GET',
-                    mode: 'cors',
-                    credentials: 'include'
-                });
-
-                const leagues = await response.json();
-
-                if (response.ok) {
-                    if (leagues.length === 0) {
-                        leaguesList.innerHTML = '<p>You are not currently assigned to any leagues.</p>';
-                        return;
-                    }
-
-                    leaguesList.innerHTML = '';
-                    leagues.forEach(league => {
-                        const item = document.createElement('div');
-                        item.className = 'league-item';
-                        item.innerHTML = `
-                            <div class="league-details">
-                                <h4>${league.name} (${league.season_year})</h4>
-                                <p>Status: <strong>${league.status}</strong> | Role: <strong>${league.role}</strong></p>
-                            </div>
-                            <div class="actions">
-                                <button data-league-id="${league.league_id}">Go to League</button>
-                            </div>
-                        `;
-                        leaguesList.appendChild(item);
+            async function fetchAndDisplayLeagues() {
+                leaguesList.innerHTML = '<p>Loading leagues...</p>'; 
+                try {
+                    const response = await fetch(`${BASE_URL}/league`, {
+                        method: 'GET',
+                        mode: 'cors',
+                        credentials: 'include'
                     });
-                } else if (response.status === 401) {
-                    // Redirect to login if unauthorized (session expired)
-                    alert('Session expired or unauthorized. Please log in again.');
-                    window.location.href = 'index.html';
-                } 
-                else {
-                    leaguesList.innerHTML = `<p class="error">Failed to fetch leagues: \${leagues.error}</p>`;
-                }
-            } catch (error) {
-                leaguesList.innerHTML = '<p class="error">Network error while fetching leagues.</p>';
-                console.error("Fetch Leagues Error:", error);
-            }
-        }
-        
-        // --- Logout Logic (Mirrored from index.html) ---
-        document.getElementById('logout-btn').addEventListener('click', async () => {
-            try {
-                await fetch(`${BASE_URL}/auth/logout`, {
-                    method: 'POST',
-                    mode: 'cors',
-                    credentials: 'include'
-                });
-                window.location.href = 'index.html';
-            } catch (error) {
-                alert('Logout failed. Try clearing cookies.');
-            }
-        });
 
-        // --- Initial Load ---
-        document.addEventListener('DOMContentLoaded', fetchAndDisplayLeagues);
-        
-        // Placeholder for Create League button
-        document.getElementById('create-league-btn').addEventListener('click', () => {
-            alert("This will take you to the Create League form.");
+                    const leagues = await response.json();
+
+                    if (response.ok) {
+                        if (leagues.length === 0) {
+                            leaguesList.innerHTML = '<p>You are not currently assigned to any leagues. Create or Search for one!</p>';
+                            return;
+                        }
+
+                        leaguesList.innerHTML = '';
+                        leagues.forEach(league => {
+                            const item = document.createElement('div');
+                            item.className = 'league-item';
+                            item.innerHTML = `
+                                <div class="league-details">
+                                    <h4>${league.name} (${league.season_year})</h4>
+                                    <p>Status: <strong>${league.status}</strong> | Role: <strong>${league.role}</strong></p>
+                                </div>
+                                <div class="actions">
+                                    <button class="go-to-league-btn" data-league-id="${league.league_id}">Go to League</button>
+                                </div>
+                            `;
+                            leaguesList.appendChild(item);
+                        });
+                        
+                        // Add listeners for the newly created "Go to League" buttons
+                        leaguesList.querySelectorAll('.go-to-league-btn').forEach(button => {
+                            button.addEventListener('click', () => {
+                                const leagueId = button.getAttribute('data-league-id');
+                                navigateToLeague(leagueId);
+                            });
+                        });
+                        
+                    } else if (response.status === 401) {
+                        alert('Session expired or unauthorized. Please log in again.');
+                        window.location.href = 'index.html';
+                    } else {
+                        leaguesList.innerHTML = `<p class="error">Failed to fetch leagues: ${leagues.error}</p>`;
+                    }
+                } catch (error) {
+                    leaguesList.innerHTML = '<p class="error">Network error while fetching leagues.</p>';
+                    console.error("Fetch Leagues Error:", error);
+                }
+            }
+
+            function renderSearchResults(leagues) {
+                searchResultsDiv.innerHTML = '';
+                if (leagues.length === 0) {
+                    searchResultsDiv.innerHTML = '<p>No matching leagues found.</p>';
+                    return;
+                }
+                
+                leagues.forEach(league => {
+                    const item = document.createElement('div');
+                    item.className = 'league-item'; 
+                    item.style.marginBottom = '5px';
+                    item.innerHTML = `
+                        <div class="league-details">
+                            <h4>${league.name} (${league.season_year})</h4>
+                            <p>Status: ${league.status}</p>
+                        </div>
+                        <div class="actions">
+                            <button class="join-league-btn" data-league-id="${league.league_id}">Join League</button>
+                        </div>
+                    `;
+                    searchResultsDiv.appendChild(item);
+                });
+
+                searchResultsDiv.querySelectorAll('.join-league-btn').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const leagueId = button.getAttribute('data-league-id');
+                        const leagueName = button.closest('.league-item').querySelector('h4').textContent;
+                        handleJoinLeague(leagueId, leagueName);
+                    });
+                });
+            }
+
+            async function handleJoinLeague(leagueId, leagueName) {
+                if (!confirm(`Are you sure you want to join ${leagueName}?`)) {
+                    return;
+                }
+
+                const button = searchResultsDiv.querySelector(`.join-league-btn[data-league-id="${leagueId}"]`);
+                button.textContent = 'Joining...';
+                button.disabled = true;
+
+                try {
+                    const response = await fetch(`${BASE_URL}/league/${leagueId}/join`, {
+                        method: 'POST',
+                        mode: 'cors',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        alert(`Successfully joined the league! You are now a member.`);
+                        document.getElementById('search-modal').style.display = 'none';
+                        fetchAndDisplayLeagues(); 
+                    } else {
+                        alert(`Failed to join league: ${result.error || 'Server error.'}`);
+                        button.textContent = 'Join League';
+                        button.disabled = false;
+                    }
+                } catch (error) {
+                    alert('Network error during join request.');
+                    button.textContent = 'Join League';
+                    button.disabled = false;
+                    console.error("Join League Error:", error);
+                }
+            }
+            
+            // 3. INITIAL LOAD 
+            fetchAndDisplayLeagues();
+            
+            // 4. ATTACH ALL EVENT LISTENERS 
+
+            // --- Create League Handlers ---
+            createLeagueBtn.addEventListener('click', () => {
+                createLeagueModal.style.display = 'block';
+                createLeagueMessage.style.display = 'none'; 
+                createLeagueForm.reset(); 
+            });
+
+            closeCreateLeagueModalBtn.addEventListener('click', () => {
+                createLeagueModal.style.display = 'none';
+            });
+
+            createLeagueModal.addEventListener('click', (e) => {
+                if (e.target === createLeagueModal) {
+                    createLeagueModal.style.display = 'none';
+                }
+            });
+
+            createLeagueForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const name = document.getElementById('new-league-name').value;
+                const season_year = document.getElementById('new-season-year').value;
+
+                createLeagueMessage.textContent = 'Creating league...';
+                createLeagueMessage.className = 'message';
+                createLeagueMessage.style.display = 'block';
+
+                try {
+                    const response = await fetch(`${BASE_URL}/league`, {
+                        method: 'POST',
+                        mode: 'cors',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, season_year: parseInt(season_year) })
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        createLeagueMessage.textContent = `Success! ${result.message}`;
+                        createLeagueMessage.className = 'message success';
+
+                        setTimeout(() => {
+                            createLeagueModal.style.display = 'none';
+                            fetchAndDisplayLeagues(); 
+                        }, 1500);
+
+                    } else {
+                        createLeagueMessage.textContent = `Error: ${result.error || 'Failed to create league.'}`;
+                        createLeagueMessage.className = 'message error';
+                    }
+                } catch (error) {
+                    createLeagueMessage.textContent = 'Network error. Could not connect to server.';
+                    createLeagueMessage.className = 'message error';
+                    console.error("Create League Error:", error);
+                }
+            });
+
+
+            // --- Search Handlers ---
+            searchLeagueForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const query = document.getElementById('search-query').value;
+                const year = document.getElementById('search-year').value;
+                searchResultsDiv.innerHTML = '<p>Searching...</p>';
+                
+                let searchUrl = `${BASE_URL}/league/search?`;
+                if (query) searchUrl += `q=${encodeURIComponent(query)}&`;
+                if (year) searchUrl += `year=${encodeURIComponent(year)}`;
+
+                try {
+                    const response = await fetch(searchUrl, {
+                        method: 'GET',
+                        mode: 'cors',
+                        credentials: 'include'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        renderSearchResults(data);
+                    } else {
+                        searchResultsDiv.innerHTML = `<p class="error">Search failed: ${data.error}</p>`;
+                    }
+                } catch (error) {
+                    searchResultsDiv.innerHTML = '<p class="error">Network error during search.</p>';
+                    console.error("Search Fetch Error:", error);
+                }
+            });
+
+            showSearchModalBtn.addEventListener('click', () => {
+                searchModal.style.display = 'block';
+                searchResultsDiv.innerHTML = '<p>Enter search criteria above.</p>';
+            });
+
+            closeSearchModalBtn.addEventListener('click', () => {
+                searchModal.style.display = 'none';
+            });
+
+            searchModal.addEventListener('click', (e) => {
+                if (e.target === searchModal) {
+                    searchModal.style.display = 'none';
+                }
+            });
+
+            // --- Logout Handler ---
+            document.getElementById('logout-btn').addEventListener('click', async () => {
+                try {
+                    await fetch(`${BASE_URL}/auth/logout`, {
+                        method: 'POST',
+                        mode: 'cors',
+                        credentials: 'include'
+                    });
+                    window.location.href = 'index.html';
+                } catch (error) {
+                    alert('Logout failed. Try clearing cookies.');
+                }
+            });
         });
     </script>
 </body>

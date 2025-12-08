@@ -1,5 +1,6 @@
-// script.js
-const BASE_URL = 'http://127.0.0.1:5000/api/auth';
+// script.js (Update the existing file)
+
+const BASE_URL = 'http://127.0.0.1:5000/api';
 const statusMessage = document.getElementById('status-message');
 
 // --- Utility Function to Display Messages ---
@@ -12,10 +13,10 @@ function displayMessage(message, isSuccess = true) {
 // --- API Communication Function (Core Logic) ---
 async function sendAuthRequest(endpoint, data) {
     try {
-        const response = await fetch(`${BASE_URL}/${endpoint}`, {
+        const response = await fetch(`${BASE_URL}/auth/${endpoint}`, {
             method: 'POST',
-            mode: 'cors',                     // ★ required for CORS
-            credentials: 'include',           // ★ required for cookies / Flask session
+            mode: 'cors',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             },
@@ -26,6 +27,10 @@ async function sendAuthRequest(endpoint, data) {
 
         if (response.ok) {
             displayMessage(result.message, true);
+            if (endpoint === 'login') {
+                // *** NEW: Redirect to the leagues dashboard page ***
+                window.location.href = 'leagues.html';
+            }
         } else {
             displayMessage(`Error: ${result.error}`, false);
         }
@@ -56,26 +61,5 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     await sendAuthRequest('login', { email, password });
 });
 
-// --- Test Protected League Retrieval ---
-document.addEventListener('DOMContentLoaded', () => {
-    const testButton = document.createElement('button');
-    testButton.textContent = "Test Protected League Data";
-    document.body.appendChild(testButton);
-
-    testButton.addEventListener('click', async () => {
-        const response = await fetch('http://127.0.0.1:5000/api/league', {
-            method: 'GET',
-            mode: 'cors',              // must match login
-            credentials: 'include'     // must send session cookie
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            console.log("Protected Data Received:", result);
-            displayMessage(`Successfully fetched ${result.length} leagues!`, true);
-        } else {
-            displayMessage(`Failed to fetch: ${result.error}`, false);
-        }
-    });
-});
+// --- REMOVE: The protected data test is no longer relevant here ---
+// It was removed because the new leagues.html now handles all data fetching.

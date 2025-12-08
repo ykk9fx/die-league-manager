@@ -1,37 +1,194 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Leagues</title>
-<link rel="stylesheet" href="/static/css/styles.css"></head>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Leagues</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .input-row { margin-bottom: 6px; display: flex; gap: 10px; }
+    .label { font-size: 0.9em; color: #666; margin-bottom: 2px; }
+    .results { margin-top: 10px; }
+    .league-card {
+      padding: 12px;
+      border-radius: 8px;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      margin-bottom: 10px;
+    }
+    .joinBtn {
+      margin-top: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+
 <body>
 <div id="nav"></div>
+
 <main>
   <h2>My Leagues</h2>
-  <button id="loadMine">Load</button>
-  <pre id="mine"></pre>
+  <button id="loadMine">Load My Leagues</button>
+  <div id="mine" class="results"></div>
 
   <section class="card">
-    <h3>Create League</h3>
-    <input id="lname" placeholder="name">
-    <input id="lyear" placeholder="season year">
-    <button id="createBtn">Create</button>
-    <pre id="createOut"></pre>
+    <h3>Create a New League</h3>
+
+    <div class="label">League Name</div>
+    <input id="lname" placeholder="Example: Die League Champions">
+
+    <div class="label">Season Year</div>
+    <input id="lyear" placeholder="2025">
+
+    <button id="createBtn">Create League</button>
+    <div id="createOut"></div>
   </section>
 
   <section class="card">
-    <h3>Search</h3>
-    <input id="q" placeholder="name contains…">
-    <input id="year" placeholder="year e.g. 2025">
+    <h3>Search for Leagues</h3>
+
+    <div class="label">Name Contains</div>
+    <input id="q" placeholder="Example: die">
+
+    <div class="label">Year</div>
+    <input id="year" placeholder="2025">
+
     <button id="searchBtn">Search</button>
-    <pre id="searchOut"></pre>
+
+    <div id="searchOut" class="results"></div>
   </section>
 </main>
-<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
-<script src="/static/js/api.js"></script>
+
 <script>
-loadMine.onclick = async ()=>{ const r=await fetch('/api/league'); mine.textContent = await r.text(); };
-createBtn.onclick = async ()=>{
-  try{ createOut.textContent = JSON.stringify(await API.post('/api/league',{name:lname.value,season_year:lyear.value}),null,2); }
-  catch(e){ createOut.textContent=e.message; }
-};
-searchBtn.onclick = async ()=>{ const r=await fetch('/api/league/search?q='+encodeURIComponent(q.value)+'&year='+encodeURIComponent(year.value)); searchOut.textContent = await r.text(); };
+  fetch('/static/_nav.html')
+      .then(r => r.text())
+      .then(h => { document.getElementById('nav').innerHTML = h });
 </script>
-</body></html>
+<script src="/static/js/api.js"></script>
+
+<script>
+
+// --- Extracted Function for Loading My Leagues ---
+const loadMyLeagues = async () => {
+    const r = await fetch('/api/league');
+    const leagues = await r.json();
+
+    const out = document.getElementById("mine");
+    out.innerHTML = "";
+
+    if (leagues.length === 0) {
+        out.textContent = "You are not in any leagues yet.";
+        return;
+    }
+
+    leagues.forEach(l => {
+        const div = document.createElement("div");
+        div.className = "league-card";
+        // Optionally include the user's role here if available in the /api/league response
+        div.innerHTML = `
+            <strong>${l.name}</strong><br>
+            Season: ${l.season_year}<br>
+            League ID: ${l.league_id}
+        `;
+        out.appendChild(div);
+    });
+};
+// --- End Extracted Function ---
+
+
+// Load user's leagues (Initial setup)
+loadMine.onclick = loadMyLeagues;
+
+
+// Create league
+createBtn.onclick = async () => {
+    const name = lname.value.trim();
+    const year = lyear.value.trim();
+
+    if (!name || !year) {
+        createOut.innerHTML = `<span class="error">Please enter name and year.</span>`;
+        return;
+    }
+
+    try {
+        const resp = await API.post('/api/league', { name, season_year: year });
+        
+        createOut.innerHTML = `<span class="success">League created successfully! Redirecting...</span>`;
+        
+        // Refresh the 'My Leagues' list in the background
+        loadMyLeagues();
+        
+        // Redirect to the newly created league's details page
+        window.location.href = `/league.html?id=${resp.league_id}`;    
+    } catch (e) {
+        createOut.innerHTML = `<span class="error">${e.message}</span>`;
+    }
+};
+
+
+// Search leagues
+searchBtn.onclick = async () => {
+    const name = encodeURIComponent(q.value);
+    const yearVal = encodeURIComponent(year.value);
+
+    const r = await fetch(`/api/league/search?q=${name}&year=${yearVal}`);
+    const leagues = await r.json();
+
+    const out = document.getElementById("searchOut");
+    out.innerHTML = "";
+
+    if (leagues.length === 0) {
+        out.textContent = "No leagues found.";
+        return;
+    }
+
+    leagues.forEach(l => {
+        const div = document.createElement("div");
+        div.className = "league-card";
+
+        div.innerHTML = `
+            <strong>${l.name}</strong> <span style="color:#888">(Season ${l.season_year})</span><br>
+            League ID: ${l.league_id}<br>
+            <button class="joinBtn" data-id="${l.league_id}">Join League</button>
+        `;
+
+        out.appendChild(div);
+    });
+
+    document.querySelectorAll(".joinBtn").forEach(btn => {
+        btn.onclick = async () => {
+            const leagueId = btn.dataset.id;
+            
+            // 1. Give visual feedback that the request is starting
+            btn.disabled = true;
+            btn.textContent = 'Joining...';
+            
+            try {
+                const resp = await API.post(`/api/league/${leagueId}/join`);
+                
+                // 2. SUCCESS: Show confirmation and then redirect
+                alert(resp.message);
+
+                // No longer need this button, so remove it or update the card text
+                btn.remove(); 
+                
+                // Refresh the 'My Leagues' list in the background
+                loadMyLeagues();
+
+                // Redirect to the league detail page to join/create a team
+                window.location.href = `/league.html?id=${leagueId}`; 
+
+            } catch (e) {
+                // 3. ERROR: Show error and re-enable button
+                btn.disabled = false;
+                btn.textContent = 'Join League';
+                alert("Error: " + e.message);
+            }
+        };
+    });
+};
+</script>
+</body>
+</html>

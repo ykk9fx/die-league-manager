@@ -53,6 +53,42 @@
         </div>
     </div>
     
+
+    <div id="create-team-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 102;">
+    <div style="background: white; margin: 10% auto; padding: 25px; width: 35%; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+        <h3>Create New Team</h3>
+        <div id="create-team-message" class="message" style="display:none;"></div>
+        
+        <form id="create-team-form">
+            <label for="new-team-name">Team Name:</label>
+            <input type="text" id="new-team-name" required 
+                   style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
+            
+            <button type="submit" class="btn-primary" style="margin-right: 10px;">Create Team</button>
+            <button type="button" id="close-create-team-modal-btn" class="btn-secondary">Cancel</button>
+        </form>
+    </div>
+</div>
+
+<div id="join-team-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 102;">
+    <div style="background: white; margin: 10% auto; padding: 25px; width: 35%; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+        <h3>Join an Existing Team</h3>
+        <div id="join-team-message" class="message" style="display:none;"></div>
+        
+        <form id="join-team-form">
+            <label for="select-team">Select Team:</label>
+            <select id="select-team" required 
+                    style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
+                <option value="">-- Select a Team --</option>
+                </select>
+            
+            <button type="submit" class="btn-primary" style="margin-right: 10px;">Join Team</button>
+            <button type="button" id="close-join-team-modal-btn" class="btn-secondary">Cancel</button>
+        </form>
+    </div>
+</div>
+
+
     <script src="league_detail.js"></script> 
     </body>
 </html>

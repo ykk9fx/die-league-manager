@@ -140,45 +140,6 @@ def role_required(required_role):
         return wrapper
     return decorator
 
-
-# app.py (Add this function)
-
-@app.route('/api/teams', methods=['POST'])
-@role_required('Commissioner') # Only Commissioner can add a new team
-def create_team():
-    """Adds a new team to a specified league, requires Commissioner role."""
-    data = request.get_json()
-    league_id = data.get('league_id')
-    team_name = data.get('team_name')
-
-    if not all([league_id, team_name]):
-        return jsonify({"error": "Missing league_id or team_name"}), 400
-
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({"error": "Database connection failed"}), 500
-
-    cursor = conn.cursor()
-    
-    try:
-        # Check if the team name is already taken in that league (UNIQUE constraint protection)
-        query = "INSERT INTO Team (league_id, team_name) VALUES (%s, %s)"
-        cursor.execute(query, (league_id, team_name))
-        conn.commit()
-        
-        team_id = cursor.lastrowid
-        
-        return jsonify({"message": "Team created successfully", "team_id": team_id}), 201
-
-    except mysql.connector.Error as err:
-        if err.errno == 1062: # Duplicate entry error
-             return jsonify({"error": f"Team name '{team_name}' already exists in this league."}), 409
-        print(f"Database error during team creation: {err}")
-        return jsonify({"error": "Team creation failed due to server error"}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
 # -----------------------
 # ROUTES MUST BE ABOVE HERE
 # -----------------------
@@ -313,7 +274,7 @@ def join_league(league_id):
         # 2. Insert the new role assignment (defaulting to TeamOwner)
         role_query = "INSERT INTO RoleAssignment (user_id, league_id, role) VALUES (%s, %s, %s)"
         # Note: In a real app, 'role' might be set to 'Member' until a Team is created.
-        default_role = 'TeamOwner' 
+        default_role = 'Player' 
         cursor.execute(role_query, (user_id, league_id, default_role))
         
         conn.commit()
@@ -637,6 +598,80 @@ def logout():
 
 league_bp = Blueprint('league', __name__)
 
+@app.route('/api/team', methods=['POST'])
+@login_required 
+def create_team():
+    data = request.get_json()
+    league_id = data.get('league_id')
+    team_name = data.get('team_name')
+    user_id = session.get('user_id') 
+
+    if not all([league_id, team_name, user_id]):
+        return jsonify({"error": "Missing data or user session"}), 400
+
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = conn.cursor()
+    
+    try:
+        # Check 1: Ensure user is a member of the league (RoleAssignment check)
+        check_member_q = "SELECT COUNT(*) FROM RoleAssignment WHERE user_id = %s AND league_id = %s"
+        cursor.execute(check_member_q, (user_id, league_id))
+        if cursor.fetchone()[0] == 0:
+             return jsonify({"error": "You must be a member of the league to create a team."}), 403
+        
+        # 2. Get the player_id corresponding to the user_id
+        player_q = "SELECT player_id FROM Player WHERE user_id = %s"
+        cursor.execute(player_q, (user_id,))
+        player_row = cursor.fetchone()
+        
+        if not player_row:
+            return jsonify({"error": "Player profile not found for this user."}), 500
+
+        player_id = player_row[0]
+
+        # Check 3: Ensure player is not already an active member of a team in this league
+        check_active_q = """
+            SELECT COUNT(TM.player_id) 
+            FROM TeamMembership TM
+            JOIN Team T ON TM.team_id = T.team_id
+            WHERE TM.player_id = %s AND T.league_id = %s AND TM.active = TRUE
+        """
+        cursor.execute(check_active_q, (player_id, league_id))
+        if cursor.fetchone()[0] > 0:
+             return jsonify({"error": "You are already an active member of a team in this league."}), 409
+        
+        # --- Start Transaction ---
+        
+        # 4. Insert the new Team
+        team_query = "INSERT INTO Team (league_id, team_name) VALUES (%s, %s)"
+        cursor.execute(team_query, (league_id, team_name))
+        team_id = cursor.lastrowid
+        
+        # 5. Insert the user/player into the TeamMembership table
+        membership_query = """
+            INSERT INTO TeamMembership (team_id, player_id, active, joined_at) 
+            VALUES (%s, %s, TRUE, NOW())
+        """
+        cursor.execute(membership_query, (team_id, player_id))
+
+        conn.commit()
+        
+        return jsonify({
+            "message": "Team created successfully. You are now the first member!", 
+            "team_id": team_id
+        }), 201
+
+    except mysql.connector.Error as err:
+        conn.rollback()
+        if err.errno == 1062: # Duplicate entry error
+            return jsonify({"error": f"Team name '{team_name}' already exists in this league."}), 409
+        print(f"Database error during team creation: {err}")
+        return jsonify({"error": "Team creation failed due to server error"}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 @league_bp.route('/league/<int:league_id>/details', methods=['GET'])
 @login_required 
@@ -650,8 +685,7 @@ def get_league_details(league_id):
     cursor = conn.cursor(dictionary=True)
     
     try:
-        # 1. Get the current user's role
-        # We NO longer check for team ownership here to avoid using T.owner_id
+        # 1. Get the current user's role (Commissioner or Player)
         role_query = "SELECT role FROM RoleAssignment WHERE user_id = %s AND league_id = %s"
         cursor.execute(role_query, (current_user_id, league_id))
         user_info = cursor.fetchone()
@@ -661,45 +695,64 @@ def get_league_details(league_id):
 
         user_role = user_info['role'] 
         
-        # FIX 1: Explicitly check for team ownership in a separate query to avoid JOIN issues.
-        # This query *will* still crash if you haven't added the owner_id column.
-        # If your table DOES NOT have owner_id, you must comment this block out too.
+        # 2. Check for the user's active team (via TeamMembership)
+        user_team_id = None
+        # Join UserAccount -> Player -> TeamMembership -> Team
+        team_check_query = """
+            SELECT 
+                T.team_id 
+            FROM 
+                Team T
+            JOIN
+                TeamMembership TM ON T.team_id = TM.team_id
+            JOIN
+                Player P ON TM.player_id = P.player_id
+            WHERE 
+                P.user_id = %s 
+                AND T.league_id = %s 
+                AND TM.active = TRUE
+        """
+        cursor.execute(team_check_query, (current_user_id, league_id))
+        team_row = cursor.fetchone()
+        if team_row:
+            user_team_id = team_row['team_id']
         
-        # --- START OPTIONAL BLOCK (Keep if you added owner_id, remove if you haven't) ---
-        user_team_id = None 
-        # --- END OPTIONAL BLOCK ---
-
-        # If you haven't added owner_id to the DB yet, replace the above block with:
-        # user_team_id = None 
-        
-        # 2. Fetch the main League details
+        # 3. Fetch the main League details
         league_query = "SELECT name, season_year, status FROM League WHERE league_id = %s"
         cursor.execute(league_query, (league_id,))
         league = cursor.fetchone()
         if not league:
             return jsonify({"error": "League not found"}), 404
 
-        # 3. Fetch all Teams in the league, WITHOUT joining to UserAccount
+        # 4. Fetch all Teams and the count of players (no 'owner' needed)
         teams_data = []
         teams_query = """
             SELECT 
-                T.team_id, T.team_name
+                T.team_id, 
+                T.team_name,
+                COUNT(TM.player_id) AS member_count
             FROM 
                 Team T
+            LEFT JOIN
+                TeamMembership TM ON T.team_id = TM.team_id AND TM.active = TRUE
             WHERE 
-                T.league_id = %s;
+                T.league_id = %s 
+            GROUP BY 
+                T.team_id, T.team_name
+            ORDER BY
+                T.team_name ASC;
         """
         cursor.execute(teams_query, (league_id,))
         teams_data = cursor.fetchall()
         
-        # 4. Compile and return the final response
+        # 5. Compile and return the final response
         response_data = {
             "league_id": league_id,
             "league_name": league['name'],
             "season_year": league['season_year'],
             "status": league['status'],
             "user_role": user_role,
-            "user_team_id": user_team_id, # Will be None if you commented out the block above
+            "user_team_id": user_team_id,
             "teams": teams_data
         }
 
@@ -708,6 +761,77 @@ def get_league_details(league_id):
     except mysql.connector.Error as err:
         print(f"Database error in get_league_details: {err}")
         return jsonify({"error": "Server error while fetching league details"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/team/join', methods=['POST'])
+@login_required 
+def join_team():
+    data = request.get_json()
+    league_id = data.get('league_id')
+    team_id = data.get('team_id')
+    user_id = session.get('user_id') 
+
+    if not all([league_id, team_id, user_id]):
+        return jsonify({"error": "Missing data (league_id or team_id) or user session"}), 400
+
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "Database connection failed"}), 500
+
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Get player_id corresponding to the user_id
+        player_q = "SELECT player_id FROM Player WHERE user_id = %s"
+        cursor.execute(player_q, (user_id,))
+        player_row = cursor.fetchone()
+        
+        if not player_row:
+            return jsonify({"error": "Player profile not found for this user."}), 500
+
+        player_id = player_row[0]
+
+        # 2. Check: Is the player already on a team in this league?
+        check_active_q = """
+            SELECT COUNT(TM.player_id) 
+            FROM TeamMembership TM
+            JOIN Team T ON TM.team_id = T.team_id
+            WHERE TM.player_id = %s AND T.league_id = %s AND TM.active = TRUE
+        """
+        cursor.execute(check_active_q, (player_id, league_id))
+        if cursor.fetchone()[0] > 0:
+             return jsonify({"error": "You are already an active member of a team in this league."}), 409
+
+        # 3. Check: Is the target team full (Limit 2 players)?
+        roster_size_q = "SELECT COUNT(player_id) FROM TeamMembership WHERE team_id = %s AND active = TRUE"
+        cursor.execute(roster_size_q, (team_id,))
+        current_size = cursor.fetchone()[0]
+
+        if current_size >= 2:
+            return jsonify({"error": "This team's roster is already full (maximum 2 players)."}), 409
+        
+        # --- Start Transaction ---
+        
+        # 4. Add the player to the TeamMembership table
+        membership_query = """
+            INSERT INTO TeamMembership (team_id, player_id, active, joined_at) 
+            VALUES (%s, %s, TRUE, NOW())
+        """
+        cursor.execute(membership_query, (team_id, player_id))
+
+        conn.commit()
+        
+        return jsonify({
+            "message": "Successfully joined the team!", 
+            "team_id": team_id
+        }), 200
+
+    except mysql.connector.Error as err:
+        conn.rollback()
+        print(f"Database error during team join: {err}")
+        return jsonify({"error": "Failed to join team due to server error"}), 500
     finally:
         cursor.close()
         conn.close()

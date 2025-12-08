@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Leagues</title>
+<link rel="stylesheet" href="/static/css/styles.css"></head>
+<body>
+<div id="nav"></div>
+<main>
+  <h2>My Leagues</h2>
+  <button id="loadMine">Load</button>
+  <pre id="mine"></pre>
+
+  <section class="card">
+    <h3>Create League</h3>
+    <input id="lname" placeholder="name">
+    <input id="lyear" placeholder="season year">
+    <button id="createBtn">Create</button>
+    <pre id="createOut"></pre>
+  </section>
+
+  <section class="card">
+    <h3>Search</h3>
+    <input id="q" placeholder="name contains…">
+    <input id="year" placeholder="year e.g. 2025">
+    <button id="searchBtn">Search</button>
+    <pre id="searchOut"></pre>
+  </section>
+</main>
+<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
+<script src="/static/js/api.js"></script>
+<script>
+loadMine.onclick = async ()=>{ const r=await fetch('/api/league'); mine.textContent = await r.text(); };
+createBtn.onclick = async ()=>{
+  try{ createOut.textContent = JSON.stringify(await API.post('/api/league',{name:lname.value,season_year:lyear.value}),null,2); }
+  catch(e){ createOut.textContent=e.message; }
+};
+searchBtn.onclick = async ()=>{ const r=await fetch('/api/league/search?q='+encodeURIComponent(q.value)+'&year='+encodeURIComponent(year.value)); searchOut.textContent = await r.text(); };
+</script>
+</body></html>

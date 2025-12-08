@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Awards</title>
+<link rel="stylesheet" href="/static/css/styles.css"></head>
+<body>
+<div id="nav"></div>
+<main>
+  <h2>Season Awards (Commissioner)</h2>
+  <section class="card">
+    <label>League:</label><select id="aleague"></select>
+    <input id="ayear" placeholder="season year">
+    <button id="acalc">Calculate Awards</button>
+    <pre id="aout"></pre>
+  </section>
+</main>
+<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
+<script src="/static/js/api.js"></script>
+<script>
+async function loadLeagues(){
+  const res = await fetch('/api/league');
+  if(res.status!==200){ aout.textContent = await res.text(); return; }
+  const leagues = await res.json();
+  aleague.innerHTML=''; leagues.forEach(l=>{ const o=document.createElement('option'); o.value=l.league_id; o.textContent=`${l.name} (${l.season_year}) - ${l.role}`; aleague.appendChild(o); });
+}
+acalc.onclick = async ()=>{
+  try{ const data=await API.post('/api/league/'+aleague.value+'/awards',{season_year: ayear.value});
+       aout.textContent = JSON.stringify(data,null,2); }
+  catch(e){ aout.textContent = e.message; }
+};
+loadLeagues();
+</script>
+</body></html>

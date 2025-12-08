@@ -1,0 +1,67 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Players</title>
+<link rel="stylesheet" href="/static/css/styles.css"></head>
+<body>
+<div id="nav"></div>
+<main>
+  <h2>Players</h2>
+  <div>
+    <input id="pq" placeholder="Search name/email…">
+    <button id="psearch">Search</button>
+    <button id="pload">Load All</button>
+  </div>
+  <table id="ptab"><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Actions</th></tr></thead><tbody></tbody></table>
+
+  <section class="card">
+    <h3>Add / Edit</h3>
+    <input id="pf" placeholder="first name">
+    <input id="pl" placeholder="last name">
+    <input id="pe" placeholder="email (optional)">
+    <input id="pid" type="hidden">
+    <button id="psave">Save</button>
+    <pre id="pout"></pre>
+  </section>
+</main>
+<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
+<script src="/static/js/api.js"></script>
+<script>
+async function loadPlayers(q=''){
+  const r = await fetch('/api/players'+(q?`?q=${encodeURIComponent(q)}`:''));
+  const data = await r.json();
+  const tb = document.querySelector('#ptab tbody'); tb.innerHTML='';
+  data.forEach(p=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${p.player_id}</td>
+      <td>${p.first_name} ${p.last_name}</td>
+      <td>${p.email??''}</td>
+      <td>
+        <button data-e="edit" data-id="${p.player_id}" data-f="${p.first_name}" data-l="${p.last_name}" data-mail="${p.email??''}">Edit</button>
+        <button data-e="del" data-id="${p.player_id}">Delete</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+}
+document.getElementById('pload').onclick = ()=>loadPlayers();
+document.getElementById('psearch').onclick = ()=>loadPlayers(document.getElementById('pq').value);
+document.querySelector('#ptab').addEventListener('click', async (e)=>{
+  const btn=e.target.closest('button'); if(!btn) return;
+  if(btn.dataset.e==='edit'){
+    pid.value = btn.dataset.id; pf.value = btn.dataset.f; pl.value = btn.dataset.l; pe.value = btn.dataset.mail;
+  } else if(btn.dataset.e==='del'){
+    const r=await fetch('/api/players/'+btn.dataset.id,{method:'DELETE'});
+    pout.textContent = await r.text(); loadPlayers();
+  }
+});
+psave.onclick = async ()=>{
+  const payload={first_name:pf.value,last_name:pl.value,email:pe.value||null};
+  const id=pid.value; let r;
+  try{
+    if(id) r=await API.put('/api/players/'+id,payload);
+    else r=await API.post('/api/players',payload);
+    pout.textContent = JSON.stringify(r,null,2);
+    pid.value=''; pf.value=''; pl.value=''; pe.value=''; loadPlayers();
+  }catch(e){ pout.textContent=e.message; }
+};
+loadPlayers();
+</script>
+</body></html>

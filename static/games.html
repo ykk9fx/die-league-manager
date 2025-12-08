@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Games</title>
+<link rel="stylesheet" href="/static/css/styles.css"></head>
+<body>
+<div id="nav"></div>
+<main>
+  <h2>Games (Commissioner)</h2>
+  <section class="card">
+    <h3>Schedule Game</h3>
+    <label>League:</label><select id="gleague"></select>
+    <label>Home Team:</label><select id="ghome"></select>
+    <label>Away Team:</label><select id="gaway"></select>
+    <input id="gwhen" placeholder="scheduled_at (YYYY-MM-DD HH:MM:SS) optional">
+    <input id="gbo" placeholder="best-of (default 1)">
+    <button id="gschedule">Schedule</button>
+    <pre id="gout"></pre>
+  </section>
+
+  <section class="card">
+    <h3>Log Round Event</h3>
+    <input id="gameid" placeholder="game_id">
+    <input id="roundnum" placeholder="round_number">
+    <input id="seq" placeholder="sequence_number">
+    <input id="playerid" placeholder="player_id">
+    <input id="etype" placeholder="event_type">
+    <input id="pldelta" placeholder="player_lp_delta (optional)">
+    <button id="gevent">Log Event</button>
+    <pre id="eout"></pre>
+  </section>
+
+  <section class="card">
+    <h3>Finalize Game</h3>
+    <input id="fgame" placeholder="game_id">
+    <button id="gfinal">Finalize</button>
+    <pre id="fout"></pre>
+  </section>
+</main>
+<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
+<script src="/static/js/api.js"></script>
+<script>
+async function loadLeaguesAndTeams(){
+  const res = await fetch('/api/league');
+  if(res.status!==200){ gout.textContent = await res.text(); return; }
+  const leagues = await res.json();
+  gleague.innerHTML=''; leagues.forEach(l=>{ const o=document.createElement('option'); o.value=l.league_id; o.textContent=`${l.name} (${l.season_year}) - ${l.role}`; gleague.appendChild(o); });
+  await refreshTeams();
+}
+async function refreshTeams(){
+  const lid = gleague.value;
+  const r = await fetch('/api/teams?league_id='+encodeURIComponent(lid));
+  const teams = await r.json();
+  [ghome, gaway].forEach(sel=>{ sel.innerHTML=''; teams.forEach(t=>{ const o=document.createElement('option'); o.value=t.team_id; o.textContent=t.team_name; sel.appendChild(o); }); });
+}
+gleague?.addEventListener('change', refreshTeams);
+gschedule.onclick = async ()=>{
+  const payload = { league_id: gleague.value, home_team: ghome.value, away_team: gaway.value,
+                    scheduled_at: gwhen.value || null, round_best_of: gbo.value? Number(gbo.value):1 };
+  try{ const data=await API.post('/api/games', payload); gout.textContent = JSON.stringify(data,null,2); }
+  catch(e){ gout.textContent = e.message; }
+};
+gevent.onclick = async ()=>{
+  const payload = { league_id: gleague.value, round_number:Number(roundnum.value),
+                    sequence_number:Number(seq.value), player_id:Number(playerid.value),
+                    event_type: etype.value, player_lp_delta: Number(pldelta.value||0) };
+  try{ const data=await API.post('/api/games/'+Number(gameid.value)+'/events', payload);
+       eout.textContent = JSON.stringify(data,null,2); }
+  catch(e){ eout.textContent = e.message; }
+};
+gfinal.onclick = async ()=>{
+  try{ const data=await API.post('/api/games/'+Number(fgame.value)+'/finalize', {league_id: gleague.value});
+       fout.textContent = JSON.stringify(data,null,2); }
+  catch(e){ fout.textContent = e.message; }
+};
+loadLeaguesAndTeams();
+</script>
+</body></html>

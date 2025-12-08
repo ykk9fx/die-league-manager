@@ -74,20 +74,23 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = False # Must be False for local HTTP testing
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
+
 def get_db_connection():
     try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME")
-        )
-        return conn
+        cfg = {
+            "host": os.getenv("DB_HOST", "127.0.0.1"),
+            "user": os.getenv("DB_USER", "root"),
+            "password": os.getenv("DB_PASSWORD", ""),
+            "database": os.getenv("DB_NAME", "die_league"),
+            "port": int(os.getenv("DB_PORT", "3306")),
+        }
+        ap = os.getenv("DB_AUTH_PLUGIN")  # e.g., 'mysql_native_password'
+        if ap:  # only pass when actually provided
+            cfg["auth_plugin"] = ap
+        return mysql.connector.connect(**cfg)
     except mysql.connector.Error as err:
         print(f"Database connection error: {err}")
         return None
-    
-# app.py (Define this near the top, after your imports)
 from functools import wraps
 
 def login_required(f):

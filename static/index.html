@@ -1,6 +1,6 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Die League</title>
-<link rel="stylesheet" href="/static/css/styles.css"></head>
+<link rel="stylesheet" href="/css/styles.css"></head>
 <body>
 <div id="nav"></div>
 <main>
@@ -30,7 +30,7 @@
   </section>
 </main>
 <script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
-<script src="/static/js/api.js"></script>
+<script src="/js/api.js"></script>
 <script>
 ping.onclick = async ()=>{ const r=await fetch('/api/status'); pingOut.textContent=await r.text(); };
 r_btn.onclick = async ()=>{
@@ -39,7 +39,7 @@ r_btn.onclick = async ()=>{
 };
 l_btn.onclick = async ()=>{
   try{ l_out.textContent = JSON.stringify(await API.post('/api/auth/login',{email:l_email.value,password:l_pw.value}),null,2);
-       location.href='/static/leagues.html'; }
+       location.href='leagues.html'; }
   catch(e){ l_out.textContent = e.message; }
 };
 </script>

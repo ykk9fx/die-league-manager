@@ -45,9 +45,60 @@ def setup_database_security():
         print(f"Security Setup Warning: {err}")
 
 
+def setup_database_triggers():
+    """
+    Satisfies Database Trigger Requirement (trg_Game_SameLeague):
+    Installs a SQL trigger that prevents games from being scheduled
+    between teams that do not belong to the correct league.
+    """
+    try:
+        # Connect as ROOT to create triggers
+        admin_conn = mysql.connector.connect(
+            host="127.0.0.1",
+            user="root",
+            password="",  # Leave empty for XAMPP
+            database="die_league_db"
+        )
+        cursor = admin_conn.cursor()
+
+        # SQL to drop the trigger if it exists (to ensure clean update)
+        cursor.execute("DROP TRIGGER IF EXISTS trg_Game_SameLeague;")
+
+        # SQL to Create the Trigger
+        trigger_sql = """
+                      CREATE TRIGGER trg_Game_SameLeague
+                          BEFORE INSERT \
+                          ON game
+                          FOR EACH ROW
+                      BEGIN
+                          DECLARE home_league_id INT;
+            DECLARE away_league_id INT;
+
+            -- Look up the league for the home team
+                          SELECT league_id INTO home_league_id FROM team WHERE team_id = NEW.home_team;
+
+                          -- Look up the league for the away team
+                          SELECT league_id INTO away_league_id FROM team WHERE team_id = NEW.away_team;
+
+                          -- Compare them to the game's league_id
+                          IF home_league_id != NEW.league_id OR away_league_id != NEW.league_id THEN
+                SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Integrity Error: Home and Away teams must belong to the same league as the game.';
+                      END IF;
+                      END; \
+                      """
+        cursor.execute(trigger_sql)
+
+        print("--- DATABASE TRIGGERS: 'trg_Game_SameLeague' installed successfully. ---")
+        cursor.close()
+        admin_conn.close()
+
+    except mysql.connector.Error as err:
+        print(f"Trigger Setup Warning: {err}")
+
 # RUN THIS ONCE AT STARTUP
 setup_database_security()
-
+setup_database_triggers()
 load_dotenv()
 
 app = Flask(__name__)
@@ -120,17 +171,17 @@ def role_required(required_role):
         def wrapper(*args, **kwargs):
             user_id = session.get('user_id')
             league_id = kwargs.get('league_id') or request.json.get('league_id') if request.json else None
-            
+
             if not league_id:
                 league_id = request.args.get('league_id')
-            
+
             if not league_id:
                 return jsonify({"error": "League ID is required for this operation"}), 400
 
             conn = get_db_connection()
             if not conn:
                 return jsonify({"error": "Database connection failed"}), 500
-            
+
             cursor = conn.cursor()
             is_authorized = False
 
@@ -163,7 +214,7 @@ def serve_login_page():
     return send_file('static/index.html')
 
 @app.route('/leagues.html', methods=['GET'])
-@login_required 
+@login_required
 def serve_leagues_page():
     """Serves the leagues.html page only if the user is logged in."""
     return send_file('static/leagues.html')
@@ -216,14 +267,14 @@ def register():
         conn.rollback()
         if err.errno == 1062:
             return jsonify({"error": "This email is already registered."}), 409
-        print(f"Database error during registration: {err}") 
+        print(f"Database error during registration: {err}")
         return jsonify({"error": "Registration failed due to server error"}), 500
-        
+
     except Exception as e:
         conn.rollback()
         print(f"CRITICAL PYTHON ERROR during registration: {e}")
         return jsonify({"error": "A critical server error occurred."}), 500
-        
+
     finally:
         cursor.close()
         conn.close()
@@ -244,7 +295,7 @@ def login():
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
 
-    cursor = conn.cursor(dictionary=True) 
+    cursor = conn.cursor(dictionary=True)
     try:
         # FIX: UserAccount -> user_account
         query = "SELECT user_id, password_hash, name FROM user_account WHERE email = %s"
@@ -280,7 +331,7 @@ def logout():
 def get_nav_content():
     """Dynamically generates the navigation bar content, including the user's name."""
     user_name = session.get('name', 'Guest')
-    
+
     # We return the raw HTML string content here, including the user's name
     html_content = f"""
     <nav>
@@ -302,7 +353,7 @@ def get_nav_content():
 def get_leagues():
     """Retrieves leagues the logged-in user is associated with."""
     user_id = session.get('user_id')
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
@@ -328,9 +379,9 @@ def get_leagues():
         """
         cursor.execute(query, (user_id,))
         leagues = cursor.fetchall()
-        
+
         return jsonify(leagues), 200
-        
+
     except mysql.connector.Error as err:
         return jsonify({"error": f"Error executing query: {err}"}), 500
     finally:
@@ -344,14 +395,14 @@ def create_league():
     data = request.get_json()
     league_name = data.get('name')
     # Get year from request, or default to current year (YYYY)
-    season_year = data.get('season_year') or datetime.now().year 
-    
+    season_year = data.get('season_year') or datetime.now().year
+
     user_id = session.get('user_id')
 
     # Now, check for name and user_id, but the year will always be set
-    if not all([league_name, user_id]): 
+    if not all([league_name, user_id]):
         return jsonify({"error": "Missing league name or user session data"}), 400
-    
+
     # Ensure year is an integer, especially since it could come from datetime.now().year
     try:
         season_year = int(season_year)
@@ -363,19 +414,19 @@ def create_league():
         return jsonify({"error": "Database connection failed"}), 500
 
     cursor = conn.cursor()
-    
+
     try:
         # FIX: League -> league
         league_query = "INSERT INTO league (name, season_year, status) VALUES (%s, %s, 'Draft')"
         cursor.execute(league_query, (league_name, season_year))
         league_id = cursor.lastrowid
-        
+
         # FIX: RoleAssignment -> role_assignment
         role_query = "INSERT INTO role_assignment (user_id, league_id, role) VALUES (%s, %s, %s)"
         cursor.execute(role_query, (user_id, league_id, 'Commissioner'))
-        
+
         conn.commit()
-        
+
         return jsonify({
             "message": f"League '{league_name} ({season_year})' created successfully.",
             "league_id": league_id
@@ -397,18 +448,18 @@ def delete_league(league_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
     try:
         # FIX: League -> league
         cursor.execute("DELETE FROM league WHERE league_id = %s", (league_id,))
-        
+
         if cursor.rowcount == 0:
             return jsonify({"error": "League not found"}), 404
-        
+
         conn.commit()
         return jsonify({"message": "League deleted successfully"}), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error deleting league: {err}")
         return jsonify({"error": "Failed to delete league"}), 500
@@ -422,22 +473,22 @@ def search_leagues():
     """Search and filter leagues with sorting options."""
     search_term = request.args.get('q', '')
     season_year = request.args.get('year', '')
-    sort_by = request.args.get('sort', 'year_desc') 
+    sort_by = request.args.get('sort', 'year_desc')
 
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
 
     cursor = conn.cursor(dictionary=True)
-    
+
     # FIX: League -> league
     query = "SELECT league_id, name, season_year, status FROM league WHERE 1=1 "
     params = []
-    
+
     if search_term:
         query += "AND name LIKE %s "
         params.append(f"%{search_term}%")
-    
+
     if season_year and season_year.isdigit():
         query += "AND season_year = %s "
         params.append(season_year)
@@ -448,14 +499,14 @@ def search_leagues():
         query += "ORDER BY name ASC, season_year DESC"
     elif sort_by == 'name_desc':
         query += "ORDER BY name DESC, season_year DESC"
-    else: 
+    else:
         query += "ORDER BY season_year DESC, name ASC"
 
     try:
         cursor.execute(query, tuple(params))
         leagues = cursor.fetchall()
         return jsonify(leagues), 200
-        
+
     except mysql.connector.Error as err:
         return jsonify({"error": f"Error executing query: {err}"}), 500
     finally:
@@ -473,7 +524,7 @@ def join_league(league_id):
         return jsonify({"error": "Database connection failed"}), 500
 
     cursor = conn.cursor()
-    
+
     try:
         # FIX: RoleAssignment -> role_assignment
         check_query = "SELECT role FROM role_assignment WHERE user_id = %s AND league_id = %s"
@@ -484,9 +535,9 @@ def join_league(league_id):
         # FIX: RoleAssignment -> role_assignment
         role_query = "INSERT INTO role_assignment (user_id, league_id, role) VALUES (%s, %s, %s)"
         cursor.execute(role_query, (user_id, league_id, 'Player'))
-        
+
         conn.commit()
-        
+
         return jsonify({
             "message": f"Successfully joined league {league_id} as a Player.",
             "league_id": league_id
@@ -500,7 +551,7 @@ def join_league(league_id):
         conn.close()
 
 @app.route('/league.html', methods=['GET'])
-@login_required 
+@login_required
 def serve_league_detail_page():
     """Serves the league detail page for viewing specific leagues."""
     return send_file('static/league.html')
@@ -514,9 +565,9 @@ def get_league_details(league_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # FIX: RoleAssignment -> role_assignment
         role_query = "SELECT role FROM role_assignment WHERE user_id = %s AND league_id = %s"
@@ -527,14 +578,14 @@ def get_league_details(league_id):
             return jsonify({"error": "User is not a member of this league"}), 403
 
         user_role = user_info['role']
-        
+
         user_team_id = None
-        
+
         # NOTE: Relying on email link since Player schema doesn't have P.user_id
         player_q = "SELECT player_id FROM player WHERE email = (SELECT email FROM user_account WHERE user_id = %s)"
         cursor.execute(player_q, (current_user_id,))
         player_row = cursor.fetchone()
-        
+
         if player_row:
             player_id = player_row['player_id']
             # FIXES: team, team_membership
@@ -548,7 +599,7 @@ def get_league_details(league_id):
             team_row = cursor.fetchone()
             if team_row:
                 user_team_id = team_row['team_id']
-        
+
         # FIX: League -> league
         league_query = "SELECT name, season_year, status FROM league WHERE league_id = %s"
         cursor.execute(league_query, (league_id,))
@@ -575,14 +626,14 @@ def get_league_details(league_id):
         """
         cursor.execute(teams_query, (league_id,))
         teams_data = cursor.fetchall()
-        
+
         response_data = {
             "league_id": league_id,
             "league_name": league['name'],
             "season_year": league['season_year'],
             "status": league['status'],
             "user_role": user_role,
-            "user_team_id": user_team_id, 
+            "user_team_id": user_team_id,
             "teams": teams_data
         }
 
@@ -603,7 +654,7 @@ def get_league_roster(league_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
 
     try:
@@ -628,9 +679,9 @@ def get_league_roster(league_id):
         """
         cursor.execute(query, (league_id,))
         roster = cursor.fetchall()
-        
+
         return jsonify(roster), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Database error fetching roster: {err}")
         return jsonify({"error": f"Error executing query: {err}"}), 500
@@ -653,7 +704,7 @@ def get_teams(league_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
 
     try:
@@ -690,7 +741,7 @@ def get_teams(league_id):
                     'current_size': 0,
                     'members': []
                 }
-            
+
             # If player_id exists (i.e., not a team with 0 members)
             if row['player_id']:
                 teams_map[team_id]['members'].append({
@@ -700,7 +751,7 @@ def get_teams(league_id):
                 teams_map[team_id]['current_size'] += 1
 
         teams_list = list(teams_map.values())
-        
+
         # 3. Check if the current user is already on a team in this league
         user_team_query = """
             SELECT 
@@ -718,9 +769,9 @@ def get_teams(league_id):
         """
         cursor.execute(user_team_query, (league_id, user_id))
         user_team = cursor.fetchone()
-        
+
         user_team_id = user_team['team_id'] if user_team else None
-        
+
         return jsonify({
             "teams": teams_list,
             "user_team_id": user_team_id
@@ -747,9 +798,9 @@ def create_team(league_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
-    
+
     try:
         # 1. Get the player_id from user_id (linking UA <-> P via email)
         player_q = "SELECT player_id FROM player WHERE email = (SELECT email FROM user_account WHERE user_id = %s)"
@@ -778,13 +829,13 @@ def create_team(league_id):
         create_team_query = "INSERT INTO team (team_name, league_id) VALUES (%s, %s)"
         cursor.execute(create_team_query, (team_name, league_id))
         team_id = cursor.lastrowid
-        
+
         # 4. Add player to the team (using team_membership)
         join_query = "INSERT INTO team_membership (team_id, player_id) VALUES (%s, %s)"
         cursor.execute(join_query, (team_id, player_id))
 
         conn.commit()
-        
+
         return jsonify({
             "message": f"Team '{team_name}' created successfully. You have been added to the team.",
             "team_id": team_id
@@ -813,9 +864,9 @@ def join_team(team_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
-    
+
     try:
         # 1. Get player_id and team info
         player_q = "SELECT player_id FROM player WHERE email = (SELECT email FROM user_account WHERE user_id = %s)"
@@ -824,7 +875,7 @@ def join_team(team_id):
         if not player_result:
             return jsonify({"error": "User does not have a linked Player record."}), 400
         player_id = player_result[0]
-        
+
         cursor.execute("SELECT league_id, team_name FROM team WHERE team_id = %s", (team_id,))
         team_result = cursor.fetchone()
         if not team_result:
@@ -859,7 +910,7 @@ def join_team(team_id):
         cursor.execute(join_query, (team_id, player_id))
 
         conn.commit()
-        
+
         return jsonify({"message": f"Successfully joined team '{team_name}'."}), 200
 
     except mysql.connector.Error as err:
@@ -881,33 +932,33 @@ def get_players():
     search = request.args.get('q', '')
     sort_by = request.args.get('sort', 'name')
     order = request.args.get('order', 'asc')
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # FIX: player
         query = "SELECT player_id, first_name, last_name, email FROM player WHERE 1=1"
         params = []
-        
+
         if search:
             query += " AND (first_name LIKE %s OR last_name LIKE %s OR email LIKE %s)"
             search_param = f"%{search}%"
             params.extend([search_param, search_param, search_param])
-        
+
         if sort_by == 'email':
             query += f" ORDER BY email {order.upper()}"
-        else: 
+        else:
             query += f" ORDER BY last_name {order.upper()}, first_name {order.upper()}"
-        
+
         cursor.execute(query, tuple(params))
         players = cursor.fetchall()
-        
+
         return jsonify(players), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error fetching players: {err}")
         return jsonify({"error": "Failed to fetch players"}), 500
@@ -923,28 +974,28 @@ def create_player():
     first_name = data.get('first_name')
     last_name = data.get('last_name')
     email = data.get('email')
-    
+
     if not all([first_name, last_name]):
         return jsonify({"error": "First name and last name are required"}), 400
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
-    
+
     try:
         # FIX: player
         query = "INSERT INTO player (first_name, last_name, email) VALUES (%s, %s, %s)"
         cursor.execute(query, (first_name, last_name, email))
         player_id = cursor.lastrowid
-        
+
         conn.commit()
         return jsonify({
             "message": "Player created successfully",
             "player_id": player_id
         }), 201
-        
+
     except mysql.connector.Error as err:
         if err.errno == 1062:
             return jsonify({"error": "A player with this email already exists"}), 409
@@ -962,16 +1013,16 @@ def update_player(player_id):
     first_name = data.get('first_name')
     last_name = data.get('last_name')
     email = data.get('email')
-    
+
     if not all([first_name, last_name]):
         return jsonify({"error": "First name and last name are required"}), 400
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
-    
+
     try:
         # FIX: player
         query = """
@@ -980,13 +1031,13 @@ def update_player(player_id):
             WHERE player_id = %s
         """
         cursor.execute(query, (first_name, last_name, email, player_id))
-        
+
         if cursor.rowcount == 0:
             return jsonify({"error": "Player not found"}), 404
-        
+
         conn.commit()
         return jsonify({"message": "Player updated successfully"}), 200
-        
+
     except mysql.connector.Error as err:
         if err.errno == 1062:
             return jsonify({"error": "A player with this email already exists"}), 409
@@ -1003,9 +1054,9 @@ def delete_player(player_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
-    
+
     try:
         # FIX: team_membership
         check_query = """
@@ -1014,19 +1065,19 @@ def delete_player(player_id):
         """
         cursor.execute(check_query, (player_id,))
         active_count = cursor.fetchone()[0]
-        
+
         if active_count > 0:
             return jsonify({"error": "Cannot delete player with active team memberships"}), 409
-        
+
         # FIX: player
         cursor.execute("DELETE FROM player WHERE player_id = %s", (player_id,))
-        
+
         if cursor.rowcount == 0:
             return jsonify({"error": "Player not found"}), 404
-        
+
         conn.commit()
         return jsonify({"message": "Player deleted successfully"}), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error deleting player: {err}")
         return jsonify({"error": "Failed to delete player"}), 500
@@ -1035,7 +1086,7 @@ def delete_player(player_id):
         conn.close()
 
 # ==================== GAME ENDPOINTS (Requires further fixing of queries) ====================
-# NOTE: The below endpoints are included for completeness but will need auditing 
+# NOTE: The below endpoints are included for completeness but will need auditing
 # for consistency with the new lowercase snake_case table names (Game->game, Team->team, etc.)
 
 @app.route('/api/games', methods=['GET'])
@@ -1043,17 +1094,17 @@ def delete_player(player_id):
 def get_games():
     """Get games with filters and sorting."""
     league_id = request.args.get('league_id')
-    status = request.args.get('status') 
+    status = request.args.get('status')
     team_id = request.args.get('team_id')
     sort_by = request.args.get('sort', 'date')
     order = request.args.get('order', 'desc')
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # FIXES: Game->game, Team->team
         query = """
@@ -1073,32 +1124,32 @@ def get_games():
             JOIN team at ON g.away_team = at.team_id
             WHERE 1=1
         """
-        
+
         params = []
-        
+
         if league_id:
             query += " AND g.league_id = %s"
             params.append(league_id)
-            
+
         if status:
             query += " AND g.status = %s"
             params.append(status)
-            
+
         if team_id:
             query += " AND (g.home_team = %s OR g.away_team = %s)"
             params.append(team_id)
             params.append(team_id)
-        
+
         if sort_by == 'status':
             query += f" ORDER BY g.status {order.upper()}, g.scheduled_at DESC"
-        else: 
+        else:
             query += f" ORDER BY g.scheduled_at {order.upper()}"
-        
+
         cursor.execute(query, tuple(params))
         games = cursor.fetchall()
-        
+
         return jsonify(games), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error fetching games: {err}")
         return jsonify({"error": "Failed to fetch games"}), 500
@@ -1111,7 +1162,7 @@ def get_games():
 # C:\projects\league-manager-api\app.py (REPLACE def create_game)
 
 @app.route('/api/games', methods=['POST'])
-@login_required 
+@login_required
 def create_game():
     """
     Schedules a new game. Requires the logged-in user to be a MEMBER of the league,
@@ -1122,20 +1173,20 @@ def create_game():
     home_team = data.get('home_team')
     away_team = data.get('away_team')
     scheduled_at = data.get('scheduled_at')
-    
+
     # NEW: Get round_best_of value, defaulting to 1 (or 3, matching frontend selection)
-    round_best_of = data.get('round_best_of', 3) 
-    
+    round_best_of = data.get('round_best_of', 3)
+
     if not scheduled_at:
         scheduled_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    user_id = session.get('user_id') 
+    user_id = session.get('user_id')
 
     if not all([league_id, home_team, away_team, user_id]):
         return jsonify({"error": "Missing required data"}), 400
     if home_team == away_team:
         return jsonify({"error": "Home and away teams must be different"}), 400
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
@@ -1189,7 +1240,7 @@ def finalize_round(game_id):
     winner_team_id = data.get('winner_team_id')
     home_score = data.get('home_score') # Little points
     away_score = data.get('away_score') # Little points
-    
+
     user_id = session.get('user_id')
 
     if not all([round_number, winner_team_id]):
@@ -1201,7 +1252,7 @@ def finalize_round(game_id):
 
     cursor = conn.cursor()
     cursor_dict = conn.cursor(dictionary=True)
-    
+
     try:
         # 1. Get Game/League/BestOf Info
         game_info_query = "SELECT league_id, home_team, away_team, round_best_of FROM game WHERE game_id = %s"
@@ -1209,11 +1260,11 @@ def finalize_round(game_id):
         game_info = cursor_dict.fetchone()
         if not game_info:
             return jsonify({"error": "Game not found"}), 404
-        
+
         home_team_id = game_info['home_team']
         away_team_id = game_info['away_team']
         round_best_of = game_info['round_best_of']
-        
+
         # 2. Update GameRound Status
         update_round_query = """
             UPDATE game_round 
@@ -1221,20 +1272,20 @@ def finalize_round(game_id):
             WHERE game_id = %s AND round_number = %s AND status = 'Pending'
         """
         cursor.execute(update_round_query, (winner_team_id, game_id, round_number))
-        
+
         if cursor.rowcount == 0:
              return jsonify({"error": "Round not in 'Pending' status or already completed."}), 409
 
-        # 3. Insert RoundScore 
+        # 3. Insert RoundScore
         is_home_winner = (winner_team_id == home_team_id)
-        
+
         score_query = """
             INSERT INTO round_score (game_id, round_number, team_id, little_points, big_point_awarded)
             VALUES (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)
         """
         # Score for Home Team
         home_lp_final = home_score if home_team_id == data.get('home_team') else away_score
-        
+
         # Score for Away Team
         away_lp_final = away_score if away_team_id == data.get('away_team') else home_score
 
@@ -1242,10 +1293,10 @@ def finalize_round(game_id):
             game_id, round_number, home_team_id, home_lp_final, is_home_winner,
             game_id, round_number, away_team_id, away_lp_final, not is_home_winner
         ))
-        
+
         # 4. Check for Overall Game End Condition
         winning_rounds_needed = (round_best_of // 2) + 1
-        
+
         rounds_won_query = """
             SELECT winner_team_id, COUNT(*) as wins
             FROM game_round
@@ -1254,18 +1305,18 @@ def finalize_round(game_id):
         """
         cursor_dict.execute(rounds_won_query, (game_id,))
         wins = cursor_dict.fetchall()
-        
+
         game_over = False
         overall_winner_id = None
-        
+
         for team_wins in wins:
             if team_wins['wins'] >= winning_rounds_needed:
                 game_over = True
                 overall_winner_id = team_wins['winner_team_id']
                 break
-        
+
         response_message = "Round finalized. Starting next round..."
-        
+
         if game_over:
             # 5. Finalize the Game
             update_game_query = "UPDATE game SET status = 'Completed' WHERE game_id = %s" # Winner ID determined by sp_TallyAndFinalizeGame
@@ -1276,11 +1327,11 @@ def finalize_round(game_id):
             next_round_number = round_number + 1
             insert_next_round = "INSERT INTO game_round (game_id, round_number, status) VALUES (%s, %s, 'Pending')"
             cursor.execute(insert_next_round, (game_id, next_round_number))
-            
+
         conn.commit()
         return jsonify({
-            "message": response_message, 
-            "game_over": game_over, 
+            "message": response_message,
+            "game_over": game_over,
             "next_round": round_number + 1 if not game_over else None
         }), 200
 
@@ -1301,18 +1352,18 @@ def delete_game(game_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
     try:
         # FIX: Game->game
         cursor.execute("DELETE FROM game WHERE game_id = %s", (game_id,))
-        
+
         if cursor.rowcount == 0:
             return jsonify({"error": "Game not found"}), 404
-        
+
         conn.commit()
         return jsonify({"message": "Game deleted successfully"}), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error deleting game: {err}")
         return jsonify({"error": "Failed to delete game"}), 500
@@ -1325,20 +1376,20 @@ def delete_game(game_id):
 def log_round_event(game_id):
     """Logs a single event to a game round."""
     data = request.get_json()
-    
+
     # Mandatory fields received from frontend
     round_number = data.get('round_number')
     sequence_number = data.get('sequence_number')
     player_id = data.get('player_id')
     event_type = data.get('event_type')
-    
+
     # Optional/Derivable fields
     player_lp_delta = data.get('player_lp_delta', 0)
     opponent_player_id = data.get('opponent_player_id')
     opponent_team_id = data.get('opponent_team_id')
-    
+
     # Initialize variables to prevent UnboundLocalError
-    player_team_id = None 
+    player_team_id = None
 
     # --- 1. Validate Mandatory Fields (Excluding team_id, which the server finds) ---
     if not all([round_number, sequence_number, player_id, event_type]):
@@ -1355,12 +1406,12 @@ def log_round_event(game_id):
         team_q = "SELECT team_id FROM team_membership WHERE player_id = %s AND active = TRUE"
         cursor.execute(team_q, (player_id,))
         player_team_row = cursor.fetchone()
-        
+
         if not player_team_row:
             return jsonify({"error": f"Player ID {player_id} is not on an active team."}), 404
-            
+
         player_team_id = player_team_row[0]
-        
+
         # 3. Log the event
         event_query = """
             INSERT INTO round_event (
@@ -1369,11 +1420,11 @@ def log_round_event(game_id):
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        # NOTE: We use the server-found player_team_id, and set opponent_lp_delta to 0 
+        # NOTE: We use the server-found player_team_id, and set opponent_lp_delta to 0
         # (as it's derived by the scoring engine, not client-sent).
-        # Removed opponent_lp_delta from the INSERT query and the VALUES tuple 
+        # Removed opponent_lp_delta from the INSERT query and the VALUES tuple
         # to match the 9 values in the VALUES clause.
-        
+
         cursor.execute(event_query, (
             game_id, round_number, sequence_number, player_team_id, player_id,
             opponent_team_id, opponent_player_id, event_type, player_lp_delta
@@ -1403,7 +1454,7 @@ def finalize_game(game_id):
     cursor = conn.cursor()
     try:
         cursor.callproc('sp_TallyAndFinalizeGame', (game_id,))
-        
+
         for result in cursor.stored_results():
             final_message = result.fetchone()[0]
 
@@ -1426,15 +1477,15 @@ def calculate_round_score(events, home_team_id, away_team_id):
         'home': 0,
         'away': 0
     }
-    
+
     round_over = False
     winner_team_id = None
-    
+
     for event in events:
         player_team = event['player_team_id']
         opponent_team = event['opponent_team_id']
         event_type = event['event_type']
-        
+
         # Determine which score accumulator to use
         if player_team == home_team_id:
             player_score_key = 'home'
@@ -1442,10 +1493,10 @@ def calculate_round_score(events, home_team_id, away_team_id):
         else:
             player_score_key = 'away'
             opponent_score_key = 'home'
-            
+
         # --- Apply Point Logic ---
         points_awarded = 0
-        
+
         if event_type in ['HIT_DROP', 'PLINK_CATCH', 'PLINK_TABLE']:
             points_awarded = 1
         elif event_type == 'PLINK_DROP':
@@ -1453,21 +1504,21 @@ def calculate_round_score(events, home_team_id, away_team_id):
         elif event_type in ['SELF_FIELD_GOAL', 'KICK']:
             points_awarded = -1
         # Hit Catch, Miss award 0 points.
-        
+
         score[player_score_key] += points_awarded
-        
+
         # NOTE: Kick penalty is against the player team, so opponent score key is not used here.
         # Your rules state Kick is -1 point to player team, 0 to opponent team.
-        
+
         # --- Apply Plunk Rule (Game/Round End Condition) ---
         if event_type == 'PLUNK':
             opponent_score = score[opponent_score_key]
-            
+
             # Plunk: Score jumps to win by two. Minimum winning score is 6, must be > opponent score + 1.
             # Example: Opponent 4. Winner needs 6. Score becomes 6-4.
             # Example: Opponent 7. Winner needs 9. Score becomes 9-7.
-            
-            winning_score_target = max(6, opponent_score + 2) 
+
+            winning_score_target = max(6, opponent_score + 2)
             score[player_score_key] = winning_score_target
             round_over = True
             winner_team_id = player_team
@@ -1476,12 +1527,12 @@ def calculate_round_score(events, home_team_id, away_team_id):
         # --- Apply Win by 2 Rule (Post-Plunk) ---
         score_diff = abs(score['home'] - score['away'])
         min_score = 7 # Minimum score needed to win, considering 5-5 tie possibility
-        
+
         if (score['home'] >= min_score or score['away'] >= min_score) and score_diff >= 2:
             round_over = True
             winner_team_id = home_team_id if score['home'] > score['away'] else away_team_id
             break # Game over, stop processing further events
-            
+
     return {
         'home_score': score['home'],
         'away_score': score['away'],
@@ -1495,15 +1546,15 @@ def calculate_round_score(events, home_team_id, away_team_id):
 @login_required
 def get_game_state(game_id):
     """
-    Retrieves the current state of a game, including teams, players, 
+    Retrieves the current state of a game, including teams, players,
     current round number, and all events logged so far.
     """
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # 1. Get Game Header and Current Round Status
         header_query = """
@@ -1527,12 +1578,12 @@ def get_game_state(game_id):
         """
         cursor.execute(header_query, (game_id,))
         game_data = cursor.fetchone()
-        
+
         if not game_data:
             return jsonify({"error": "Game not found."}), 404
-        
+
         league_id = game_data['league_id']
-        
+
         # Handle case where game is created but no round is started yet
         current_round = game_data['round_number'] if game_data['round_number'] is not None else 1
 
@@ -1554,7 +1605,7 @@ def get_game_state(game_id):
         """
         cursor.execute(roster_query, (game_data['home_team'], game_data['away_team']))
         raw_roster = cursor.fetchall()
-        
+
         roster_map = {game_data['home_team']: [], game_data['away_team']: []}
         for player in raw_roster:
             roster_map[player['team_id']].append(player)
@@ -1577,11 +1628,11 @@ def get_game_state(game_id):
 
         # 4. Calculate Score using the helper function
         scoring_state = calculate_round_score(
-            events, 
-            game_data['home_team'], 
+            events,
+            game_data['home_team'],
             game_data['away_team']
         )
-        
+
         # 5. Construct the Final State Object
         state = {
             "game_header": {
@@ -1601,7 +1652,7 @@ def get_game_state(game_id):
             },
             "rosters": roster_map,
         }
-        
+
         return jsonify(state), 200
 
     except mysql.connector.Error as err:
@@ -1616,7 +1667,7 @@ def get_game_state(game_id):
 @login_required
 def undo_last_event(game_id, round_number):
     """Deletes the event with the highest sequence number in the specified round."""
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
@@ -1641,7 +1692,7 @@ def undo_last_event(game_id, round_number):
             WHERE game_id = %s AND round_number = %s AND sequence_number = %s
         """
         cursor.execute(delete_query, (game_id, round_number, max_sequence))
-        
+
         conn.commit()
 
         return jsonify({"message": f"Event #{max_sequence} undone successfully."}), 200
@@ -1662,15 +1713,15 @@ def get_stats():
     league_id = request.args.get('league_id')
     player_id = request.args.get('player_id')
     category = request.args.get('category')
-    sort_by = request.args.get('sort', 'value') 
+    sort_by = request.args.get('sort', 'value')
     order = request.args.get('order', 'desc')
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # FIXES: PlayerSeasonMetric, Player, SeasonStatCategory -> player_season_metric, player, season_stat_category
         query = """
@@ -1687,33 +1738,33 @@ def get_stats():
             JOIN season_stat_category ssc ON psm.category_code = ssc.category_code
             WHERE 1=1
         """
-        
+
         params = []
-        
+
         if league_id:
             query += " AND psm.league_id = %s"
             params.append(league_id)
-            
+
         if player_id:
             query += " AND psm.player_id = %s"
             params.append(player_id)
-            
+
         if category:
             query += " AND psm.category_code = %s"
             params.append(category)
-        
+
         if sort_by == 'player':
             query += f" ORDER BY player_name {order.upper()}, psm.metric_value DESC"
         elif sort_by == 'category':
             query += f" ORDER BY psm.category_code {order.upper()}, psm.metric_value DESC"
-        else: 
+        else:
             query += f" ORDER BY psm.metric_value {order.upper()}, player_name ASC"
-        
+
         cursor.execute(query, tuple(params))
         stats = cursor.fetchall()
-        
+
         return jsonify(stats), 200
-        
+
     except mysql.connector.Error as err:
         print(f"Error fetching stats: {err}")
         return jsonify({"error": "Failed to fetch statistics"}), 500
@@ -1727,20 +1778,20 @@ def calculate_awards(league_id):
     """Calculates season awards based on PlayerSeasonMetric data."""
     data = request.get_json()
     season_year = data.get('season_year')
-    
+
     if not season_year:
         return jsonify({"error": "Missing season_year"}), 400
 
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
-    
+
     cursor = conn.cursor()
     try:
         # FIXES: SeasonAward, PlayerSeasonMetric -> season_award, player_season_metric
         delete_awards_query = "DELETE FROM season_award WHERE league_id = %s AND season_year = %s"
         cursor.execute(delete_awards_query, (league_id, season_year))
-        
+
         award_query = """
             INSERT INTO season_award (league_id, season_year, category_code, winner_player_id, metric_value)
             SELECT
@@ -1763,7 +1814,7 @@ def calculate_awards(league_id):
             WHERE rn = 1
         """
         cursor.execute(award_query, (league_id, season_year))
-        
+
         conn.commit()
         return jsonify({
             "message": f"Awards for League {league_id}, Season {season_year} calculated and updated.",

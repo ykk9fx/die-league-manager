@@ -7,12 +7,13 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# --- Configuration (Copied from .env and app.py logic) ---
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "die_league_db")
+# --- Configuration (Maintenance Mode) ---
+# We force ROOT here because 'league_app' is not allowed to DROP databases.
+DB_HOST = "127.0.0.1"
+DB_PORT = 3306
+DB_USER = "root"    # Force Administrator
+DB_PASSWORD = ""    # XAMPP default is empty
+DB_NAME = "die_league_db"
 SCHEMA_FILE = "db/schema.sql"  # Assuming you placed schema.sql in a 'db' folder
 
 def get_admin_connection():

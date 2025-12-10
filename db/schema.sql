@@ -149,3 +149,122 @@ CREATE TABLE season_award (
     FOREIGN KEY (category_code) REFERENCES season_stat_category(category_code) ON DELETE CASCADE,
     FOREIGN KEY (winner_player_id) REFERENCES player(player_id) ON DELETE CASCADE
 );
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS sp_TallyAndFinalizeGame$$
+
+CREATE PROCEDURE sp_TallyAndFinalizeGame (
+    IN p_game_id INT
+)
+BEGIN
+    -- == 1. DECLARE VARIABLES ==
+    DECLARE v_league_id INT;
+    DECLARE v_season_year INT;
+    DECLARE v_home_team INT;
+    DECLARE v_away_team INT;
+    DECLARE v_home_wins INT;
+    DECLARE v_away_wins INT;
+    DECLARE v_winner_team_id INT;
+    DECLARE v_loser_team_id INT;
+    DECLARE v_game_status VARCHAR(50);
+
+    -- == 2. VALIDATE GAME ==
+    SELECT 
+        g.league_id, l.season_year, g.home_team, g.away_team, g.status
+    INTO 
+        v_league_id, v_season_year, v_home_team, v_away_team, v_game_status
+    FROM 
+        game g
+    JOIN 
+        league l ON g.league_id = l.league_id
+    WHERE 
+        g.game_id = p_game_id;
+
+    IF v_game_status = 'Completed' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Game is already completed.';
+    END IF;
+
+    -- == 3. DETERMINE WINNER ==
+    SELECT COUNT(*) INTO v_home_wins
+    FROM game_round
+    WHERE game_id = p_game_id AND winner_team_id = v_home_team;
+
+    SELECT COUNT(*) INTO v_away_wins
+    FROM game_round
+    WHERE game_id = p_game_id AND winner_team_id = v_away_team;
+    
+    IF v_home_wins > v_away_wins THEN
+        SET v_winner_team_id = v_home_team;
+        SET v_loser_team_id = v_away_team;
+    ELSE
+        SET v_winner_team_id = v_away_team;
+        SET v_loser_team_id = v_home_team;
+    END IF;
+
+    -- == 4A. TALLY ATTACKER STATS ==
+    INSERT INTO player_season_metric (league_id, season_year, player_id, category_code, metric_value)
+    SELECT
+        v_league_id,
+        v_season_year,
+        player_id,
+        CASE
+            WHEN event_type LIKE 'PLINK%' THEN 'PLINKS'
+            WHEN event_type LIKE 'HIT%' THEN 'HITS'
+            WHEN event_type = 'MISS' THEN 'MISSES'
+            WHEN event_type = 'PLUNK' THEN 'PLUNKS'
+            WHEN event_type = 'KICK' THEN 'KICKS'
+            WHEN event_type = 'SELF_FIELD_GOAL' THEN 'SELF_FG'
+            ELSE NULL
+        END AS stat_category,
+        COUNT(*) AS event_count
+    FROM round_event
+    WHERE game_id = p_game_id
+    GROUP BY player_id, stat_category
+    HAVING stat_category IS NOT NULL
+    ON DUPLICATE KEY UPDATE
+        metric_value = metric_value + VALUES(metric_value);
+
+    -- == 4B. TALLY DEFENDER STATS ==
+    INSERT INTO player_season_metric (league_id, season_year, player_id, category_code, metric_value)
+    SELECT
+        v_league_id,
+        v_season_year,
+        opponent_player_id AS player_id,
+        CASE
+            WHEN event_type LIKE '%_DROP' THEN 'DROPS'
+            WHEN event_type LIKE '%_CATCH' THEN 'CATCHES'
+            ELSE NULL
+        END AS stat_category,
+        COUNT(*) AS event_count
+    FROM round_event
+    WHERE 
+        game_id = p_game_id 
+        AND opponent_player_id IS NOT NULL 
+    GROUP BY player_id, stat_category
+    HAVING stat_category IS NOT NULL
+    ON DUPLICATE KEY UPDATE
+        metric_value = metric_value + VALUES(metric_value);
+
+    -- == 5. TALLY WINS & LOSSES ==
+    INSERT INTO player_season_metric (league_id, season_year, player_id, category_code, metric_value)
+    SELECT v_league_id, v_season_year, player_id, 'PLAYER_WINS', 1
+    FROM team_membership
+    WHERE team_id = v_winner_team_id
+    ON DUPLICATE KEY UPDATE metric_value = metric_value + 1;
+
+    INSERT INTO player_season_metric (league_id, season_year, player_id, category_code, metric_value)
+    SELECT v_league_id, v_season_year, player_id, 'PLAYER_LOSSES', 1
+    FROM team_membership
+    WHERE team_id = v_loser_team_id
+    ON DUPLICATE KEY UPDATE metric_value = metric_value + 1;
+
+    -- == 6. FINALIZE GAME ==
+    UPDATE game SET winner_team_id = v_winner_team_id WHERE game_id = p_game_id;
+    
+    SELECT 'Game finalized and stats tallied successfully.' AS result;
+
+END$$
+
+-- Reset delimiter back to standard semicolon
+DELIMITER ;

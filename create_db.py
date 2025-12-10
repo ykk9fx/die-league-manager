@@ -47,47 +47,95 @@ def get_admin_connection():
 
 # C:\projects\league-manager-api\create_db.py
 
+# C:\projects\league-manager-api\create_db.py (REPLACE execute_sql_file ENTIRELY)
+
 def execute_sql_file(conn, file_path):
     """
-    Reads a SQL file, cleans the content, and executes each statement 
-    individually to ensure the DDL is applied correctly.
+    Reads a SQL file and executes statements. Uses custom logic to correctly parse
+    and execute stored procedures that use the DELIMITER command.
     """
     print(f"Reading SQL from {file_path}...")
     
     with open(file_path, 'r') as f:
-        sql_content = f.read()
+        sql_script = f.read()
     
-    # --- Robust Cleanup and Splitting ---
-    # 1. Remove comments
-    lines = sql_content.split('\n')
-    clean_lines = []
-    for line in lines:
-        if line.strip() and not line.strip().startswith('--'):
-            clean_lines.append(line)
-    
-    # 2. Join lines back, then split by semicolon
-    sql_commands = ' '.join(clean_lines).split(';')
-    
-    # 3. Filter and clean up individual commands
-    final_commands = [c.strip() for c in sql_commands if c.strip()]
-    # ------------------------------------
-
     cursor = conn.cursor()
     executed_count = 0
     
-    for command in final_commands:
+    # Custom parser state variables
+    commands = []
+    current_command = []
+    current_delimiter = ';'
+    
+    # 1. Use the script's content to process commands
+    # We use the native Python split based on the content of the file
+    
+    # Process the entire script content line by line, splitting by the command delimiter
+    # This loop is designed to handle the DELIMITER changes effectively
+    for line in sql_script.split('\n'):
+        clean_line = line.strip()
+        if not clean_line or clean_line.startswith('--'):
+            continue
+
+        # Check for DELIMITER change command
+        if clean_line.upper().startswith('DELIMITER'):
+            # Switch the delimiter
+            current_delimiter = clean_line.split()[1]
+            continue
+        
+        # Add line to the current command buffer
+        current_command.append(line)
+        
+        # Check if the command buffer ends with the current delimiter
+        if current_command[-1].strip().endswith(current_delimiter):
+            
+            # The full command is ready (multi-line)
+            command_text = ' '.join(current_command).strip()
+            
+            # Remove the trailing delimiter
+            if command_text.endswith(current_delimiter):
+                command_text = command_text[:-len(current_delimiter)].strip()
+            
+            if command_text:
+                commands.append(command_text)
+            
+            # Reset buffer
+            current_command = []
+
+    # --- Execute Commands ---
+    for command in commands:
+        if not command:
+            continue
+            
         try:
-            # Check for empty command strings after cleanup
-            if command:
-                cursor.execute(command)
-                executed_count += 1
+            # We must execute the command here. For procedures, this is the whole block.
+            # For standard DDL, it's one statement.
+            cursor.execute(command)
+
+            executed_count += 1
+            
+            # If the command was a stored procedure call or DECLARE, 
+            # we need to consume any result sets, even if none are explicitly returned.
+            # This is the tricky part that 'Commands out of sync' complains about.
+            # We safely consume all available results before sending the next command.
+            # (Note: This is often complex and depends on the specific connector's API.)
+            
+            # We rely on the connection being stable, if it throws "commands out of sync"
+            # we must process the results. We try to use get_result() if available.
+            try:
+                # Check for results, especially after procedural code
+                while cursor.nextset():
+                    pass
+            except Exception:
+                # This is a fallback to ensure we move past the current statement's result set
+                pass
+            
         except mysql.connector.Error as err:
-            # If a statement fails, print the error and stop the process
-            print(f"SQL Execution Error on command: {command[:80]}...")
+            print(f"\nSQL Execution Error on command: {command[:80]}...")
             print(f" Error: {err.msg}")
             conn.rollback()
-            raise 
-    
+            raise Exception(f"FATAL SQL ERROR: {err.msg}") from err
+            
     conn.commit()
     cursor.close()
     print(f"{executed_count} SQL statements executed.")

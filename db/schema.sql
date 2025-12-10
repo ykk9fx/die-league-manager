@@ -118,12 +118,24 @@ CREATE TABLE round_event (
     FOREIGN KEY (opponent_player_id) REFERENCES player(player_id)
 );
 
--- 11. Season Stat Category Table
-CREATE TABLE season_stat_category (
+CREATE TABLE IF NOT EXISTS season_stat_category (
     category_code VARCHAR(50) PRIMARY KEY,
-    display_name VARCHAR(100) NOT NULL
+    display_name VARCHAR(100) NOT NULL,
+    description VARCHAR(255)
 );
 
+-- ✅ REQUIRED SEED DATA (matches stored procedure EXACTLY)
+INSERT IGNORE INTO season_stat_category (category_code, display_name, description) VALUES
+('PLINKS', 'Plinks', 'Total plinks recorded'),
+('HITS', 'Hits', 'Successful hits'),
+('MISSES', 'Misses', 'Missed attempts'),
+('PLUNKS', 'Plunks', 'Plunks ending a round'),
+('KICKS', 'Kicks', 'Kick penalties'),
+('SELF_FG', 'Self Field Goals', 'Accidental self-scoring'),
+('DROPS', 'Drops', 'Opponent cup drops'),
+('CATCHES', 'Catches', 'Opponent catches'),
+('PLAYER_WINS', 'Player Wins', 'Matches won'),
+('PLAYER_LOSSES', 'Player Losses', 'Matches lost');
 -- 12. Player Season Metric Table
 CREATE TABLE player_season_metric (
     league_id INT NOT NULL,
@@ -181,8 +193,8 @@ BEGIN
     WHERE 
         g.game_id = p_game_id;
 
-    IF v_game_status = 'Completed' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Game is already completed.';
+    IF v_game_status = 'Finalized' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Game is already finalized.';
     END IF;
 
     -- == 3. DETERMINE WINNER ==
@@ -260,7 +272,7 @@ BEGIN
     ON DUPLICATE KEY UPDATE metric_value = metric_value + 1;
 
     -- == 6. FINALIZE GAME ==
-    UPDATE game SET winner_team_id = v_winner_team_id WHERE game_id = p_game_id;
+    UPDATE game SET status = 'Finalized' WHERE game_id = p_game_id;
     
     SELECT 'Game finalized and stats tallied successfully.' AS result;
 

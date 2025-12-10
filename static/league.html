@@ -27,16 +27,14 @@
             border-radius: 4px;
         }
         .input-row { margin-bottom: 10px; }
-        /* Style for inputs and selects */
         input[type="text"], input[type="number"], select {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 4px;
             width: 100%;
             box-sizing: border-box;
-            margin-bottom: 5px; /* Added spacing */
+            margin-bottom: 5px;
         }
-        /* Grid layout for scoring form */
         #gameScoringForm {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -67,608 +65,47 @@
     </style>
 </head>
 <body>
-    <div id="nav"></div>
 
-    <main>
-        <h2 id="leagueHeader">Loading League...</h2>
-        <p>Status: <span id="leagueStatus"></span> | Season: <span id="leagueYear"></span></p>
-        <p>Your Role: <span id="userRole"></span> | <span id="userTeamInfo"></span></p>
+<div id="nav"></div>
 
-        <div class="view-switcher">
-            <button id="btnPlayers" data-view="players" class="active">Players/Roster</button>
-            <button id="btnTeams" data-view="teams">Teams</button>
-            <button id="btnStandings" data-view="standings">Standings</button>
-            <button id="btnStats" data-view="stats">Stats & Awards</button>
-            <button id="btnRecordGame" data-view="recordGame">Record Game</button>
-        </div>
+<main>
+    <h2 id="leagueHeader">Loading League...</h2>
+    <p>Status: <span id="leagueStatus"></span> | Season: <span id="leagueYear"></span></p>
+    <p>Your Role: <span id="userRole"></span> | <span id="userTeamInfo"></span></p>
 
-        <div class="view-content">
-            <div id="viewPlayers">Player Roster View Content (Loading...)</div>
-            
-            <div id="viewTeams" class="hidden">
-                <h3>Teams</h3>
-                
-                <div id="teamCreateSection" class="card" style="margin-bottom: 20px;">
-                    <h4>Create a New Team</h4>
-                    <div class="input-row">
-                        <div class="label">Team Name</div>
-                        <input id="newTeamName" type="text" placeholder="Example: The Blue Devils">
-                    </div>
-                    <button id="createTeamBtn">Create Team</button>
-                    <div id="createTeamOut" class="results"></div>
+    <div class="view-switcher">
+        <button id="btnPlayers" data-view="players" class="active">Players/Roster</button>
+        <button id="btnTeams" data-view="teams">Teams</button>
+        <button id="btnStandings" data-view="standings">Standings</button>
+        <button id="btnStats" data-view="stats">Stats & Awards</button>
+        <button id="btnRecordGame" data-view="recordGame">Record Game</button>
+    </div>
+
+    <div class="view-content">
+
+        <div id="viewPlayers">Player Roster View Content (Loading...)</div>
+
+        <div id="viewTeams" class="hidden">
+            <h3>Teams</h3>
+            <div id="teamCreateSection" class="card" style="margin-bottom: 20px;">
+                <h4>Create a New Team</h4>
+                <div class="input-row">
+                    <div class="label">Team Name</div>
+                    <input id="newTeamName" type="text" placeholder="Example: The Blue Devils">
                 </div>
-                
-                <div id="teamsList" class="results">
-                    <em>Click the Teams tab to load data.</em>
-                </div>
+                <button id="createTeamBtn">Create Team</button>
+                <div id="createTeamOut" class="results"></div>
             </div>
-            
-            <div id="viewStandings" class="hidden">Standings View Content (To be built: Implement logic to aggregate big points from completed games.)</div>
-            <div id="viewStats" class="hidden">Stats/Awards View Content (Loading...)</div>
-            
-            <div id="viewRecordGame" class="hidden">
-                <h3>Schedule & Record New Game</h3>
-                <div class="card">
-                    <div class="input-row"><div class="label">Home Team</div><select id="homeTeamSelect"></select></div>
-                    <div class="input-row"><div class="label">Away Team</div><select id="awayTeamSelect"></select></div>
-                    <button id="scheduleGameBtn">Schedule & Record Game</button>
-                    <div id="gameRecordOut" class="results"></div>
-                </div>
+
+            <div id="teamsList" class="results">
+                <em>Click the Teams tab to load data.</em>
             </div>
         </div>
 
-    </main>
-    
-    <!-- Include API helper first -->
-    <script src="/static/js/api.js"></script>
+        <div id="viewStandings" class="hidden">Standings View Content (To be built: Implement logic to aggregate big points from completed games.)</div>
+        <div id="viewStats" class="hidden">Stats/Awards View Content (Loading...)</div>
 
-    <script>
-    // Basic runtime check: ensure API object exists (api.js should define it)
-    if (typeof API === 'undefined') {
-        console.error('API object not found. Make sure /static/js/api.js defines a global "API" with get/post helpers.');
-    }
-
-    // Store global league data once loaded
-    let LEAGUE_ID = null; 
-    let LEAGUE_DATA = {}; // Holds latest state from /api/league/{id}/details
-    let GAME_STATE = {}; // Holds latest state from /api/game/{id}/state
-
-    // --- Global Elements ---
-    const playersView = document.getElementById('viewPlayers');
-    const viewContents = document.querySelectorAll('.view-content > div'); // Defined globally for easy access
-    // ... (rest of global elements) ...
-    const teamCreateSection = document.getElementById('teamCreateSection');
-    const teamsList = document.getElementById('teamsList');
-    const createTeamOut = document.getElementById('createTeamOut');
-    const newTeamNameInput = document.getElementById('newTeamName');
-    const createTeamBtn = document.getElementById('createTeamBtn');
-    const userTeamInfo = document.getElementById('userTeamInfo');
-
-
-    // --- Logout Handler (Required for dynamic navigation) ---
-    const handleLogout = async () => { 
-        try {
-            await API.post('/api/auth/logout'); 
-        } catch (e) {
-            console.error("Logout API failed, but proceeding with client logout:", e);
-        } finally {
-            window.location.href = '/'; 
-        }
-    };
-
-    const attachLogoutHandler = () => { 
-        const logoutButton = document.getElementById('logoutBtn');
-        if (logoutButton) {
-            logoutButton.addEventListener('click', handleLogout);
-        }
-    };
-
-    // --- View Switching Logic ---
-    // viewContents is defined globally
-    document.querySelectorAll('.view-switcher button').forEach(button => {
-        button.onclick = async (e) => {
-            const viewId = e.target.dataset.view;
-            
-            // Toggle active class on buttons
-            document.querySelectorAll('.view-switcher button').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-
-            // Toggle visibility of content divs
-            viewContents.forEach(div => div.classList.add('hidden'));
-            const targetId = `view${viewId.charAt(0).toUpperCase() + viewId.slice(1)}`;
-            const targetEl = document.getElementById(targetId);
-            if (targetEl) targetEl.classList.remove('hidden');
-
-            // Dynamically load data based on view
-            if (viewId === 'players') await loadPlayersView();
-            if (viewId === 'teams') await loadTeamsView();
-            if (viewId === 'recordGame') await loadRecordGameView();
-            if (viewId === 'stats') await loadStatsView(); 
-            // TODO: loadStandingsView
-        };
-    });
-
-    
-    // --- Roster Loading Function ---
-    const loadPlayersView = async () => {
-        playersView.innerHTML = "<em>Loading players...</em>";
-        
-        if (!LEAGUE_ID) {
-            playersView.innerHTML = `<span class="error">Cannot load roster: League ID is missing.</span>`;
-            return;
-        }
-
-        try {
-            const roster = await API.get(`/api/league/${LEAGUE_ID}/roster`);
-            playersView.innerHTML = "<h4>Active Players</h4>";
-
-            if (!Array.isArray(roster) || roster.length === 0) {
-                playersView.innerHTML += "<p>No players have joined this league yet.</p>";
-                return;
-            }
-
-            const list = document.createElement('ul');
-            roster.forEach(p => {
-                const item = document.createElement('li');
-                item.textContent = `${p.first_name} ${p.last_name} (${p.email}) - Role: ${p.role}`;
-                list.appendChild(item);
-            });
-            playersView.appendChild(list);
-
-        } catch (e) {
-            playersView.innerHTML = `<span class="error">Failed to load roster: ${e.message}</span>`;
-        }
-    };
-
-
-    // --- Team Joining Handler Attachment ---
-    // (implement attachJoinTeamHandlers in your api.js or here if needed)
-
-    // --- Team Creation Handler (CORRECTED PAYLOAD) ---
-    // (attach createTeamBtn.onclick in your existing code if you have it elsewhere)
-
-
-    // --- Teams View Loading Function ---
-    const loadTeamsView = async () => {
-        teamsList.innerHTML = "<em>Loading teams...</em>";
-        if (teamCreateSection) teamCreateSection.style.display = 'none'; 
-        if (createTeamOut) createTeamOut.textContent = '';
-        
-        if (!LEAGUE_ID) {
-            teamsList.innerHTML = `<span class="error">Cannot load teams: League ID is missing.</span>`;
-            return;
-        }
-
-        try {
-            const response = await API.get(`/api/league/${LEAGUE_ID}/teams`);
-            const teams = response.teams || [];
-            const userTeamId = response.user_team_id || null;
-            
-            const MAX_SIZE = 2;
-            
-            // 1. Determine user status
-            if (userTeamId) {
-                if (teamCreateSection) teamCreateSection.style.display = 'none';
-                userTeamInfo.innerHTML = `On Team: <strong>Team ID ${userTeamId}</strong>`;
-            } else {
-                if (teamCreateSection) teamCreateSection.style.display = 'block'; 
-                userTeamInfo.textContent = `Not on a team.`;
-            }
-
-            // 2. Render the list of teams
-            teamsList.innerHTML = `<h4>Current Teams (Max size: ${MAX_SIZE})</h4>`;
-            
-            if (teams.length === 0) {
-                teamsList.innerHTML += "<p>No teams have been created yet. Use the form above to create the first team.</p>";
-                return;
-            }
-
-            teams.forEach(t => {
-                const teamCard = document.createElement('div');
-                teamCard.className = 'card team-card';
-                
-                const isFull = t.current_size >= MAX_SIZE;
-                const memberNames = (t.members || []).map(m => m.name).join(', ') || '— Empty —';
-
-                let buttonHtml = '';
-                if (userTeamId === null) {
-                    if (isFull) {
-                        buttonHtml = '<button disabled style="background-color: #dc3545;">Team is Full</button>';
-                    } else {
-                        buttonHtml = `<button class="joinTeamBtn" data-id="${t.team_id}">Join Team</button>`;
-                    }
-                } else if (t.team_id === userTeamId) {
-                    buttonHtml = '<span style="color: green; font-weight: bold; float: right;">(Your Team)</span>';
-                }
-                
-                teamCard.innerHTML = `
-                    <strong>${t.name}</strong> 
-                    <span style="float: right;">Players: ${t.current_size}/${MAX_SIZE}</span><br>
-                    Members: ${memberNames}<br>
-                    ${buttonHtml}
-                `;
-                teamsList.appendChild(teamCard);
-            });
-            
-            // attachJoinTeamHandlers(); // ensure this exists
-
-        } catch (e) {
-            teamsList.innerHTML = `<span class="error">Failed to load teams: ${e.message}</span>`;
-        }
-    };
-
-    // --- Game Recording Handlers and Loaders ---
-
-    const handleAdvanceRound = async (gameId, roundNumber, winnerTeamId, homeScore, awayScore) => {
-        if (!confirm(`Are you sure you want to finalize Round ${roundNumber} (Winner: Team ${winnerTeamId}) and advance?`)) return;
-        
-        try {
-            const resp = await API.post(`/api/game/${gameId}/round/finalize`, {
-                round_number: roundNumber,
-                winner_team_id: winnerTeamId,
-                home_score: homeScore, 
-                away_score: awayScore 
-            });
-            alert(resp.message);
-            await loadGameState(gameId);
-        } catch (e) {
-            alert("Failed to advance round: " + e.message);
-        }
-    };
-
-    const handleFinalizeGame = async (gameId) => {
-        if (!confirm('Are you sure you want to finalize the entire game and tally stats? This action cannot be undone.')) return;
-        try {
-            const resp = await API.post(`/api/game/${gameId}/finalize`);
-            alert(resp.message);
-            await loadGameState(gameId); 
-        } catch (e) {
-            alert("Failed to finalize game: " + e.message);
-        }
-    };
-
-    const handleLogEvent = async () => {
-        const gameId = LEAGUE_ID;
-        const shooterSelect = document.getElementById('playerShooter');
-        const opponentSelect = document.getElementById('playerOpponent');
-        const eventTypeSelect = document.getElementById('eventTypeSelect');
-        const logOut = document.getElementById('eventLogOut');
-        const logBtn = document.getElementById('logEventBtn');
-
-        if (!logOut) return;
-
-        logOut.textContent = '';
-        
-        if (!shooterSelect || !eventTypeSelect) {
-            logOut.innerHTML = '<span class="error">UI not ready. Shooter or event type selector missing.</span>';
-            return;
-        }
-
-        if (!shooterSelect.value || eventTypeSelect.value === '0') {
-            logOut.innerHTML = '<span class="error">Must select a Shooter/Player and an Event Type.</span>';
-            return;
-        }
-        
-        const sequenceNumber = GAME_STATE.current_round?.score?.next_sequence ?? 1; 
-        const currentRound = GAME_STATE.current_round?.number ?? 1;
-
-        const shooterId = parseInt(shooterSelect.value);
-        const shooterTeamId = parseInt(shooterSelect.options[shooterSelect.selectedIndex].dataset.teamId);
-        
-        const opponentId = opponentSelect && opponentSelect.value ? parseInt(opponentSelect.value) : null;
-        const opponentTeamId = opponentSelect && opponentSelect.value ? parseInt(opponentSelect.options[opponentSelect.selectedIndex].dataset.teamId) : null;
-        
-        const eventType = eventTypeSelect.value;
-        let playerLpDelta = 0;
-        
-        // --- Calculate LP Delta (Crucial client-side logic added) ---
-        switch (eventType) {
-            case 'HIT_DROP':
-            case 'PLINK_CATCH':
-            case 'PLINK_TABLE':
-                playerLpDelta = 1;
-                break;
-            case 'PLINK_DROP':
-                playerLpDelta = 2;
-                break;
-            case 'KICK':
-            case 'SELF_FIELD_GOAL':
-                playerLpDelta = -1;
-                break;
-            case 'PLUNK':
-                playerLpDelta = 99; // Plunk means the round ends, use a placeholder large number
-                break;
-            case 'HIT_CATCH':
-            case 'MISS':
-            default:
-                playerLpDelta = 0;
-                break;
-        }
-        
-        // --- Basic Validation (needsOpponent is still based on rules) ---
-        const needsOpponent = ['HIT_DROP', 'PLINK_DROP', 'PLINK_CATCH', 'HIT_CATCH', 'KICK'];
-        if (needsOpponent.includes(eventType) && !opponentId) {
-            logOut.innerHTML = '<span class="error">This event requires an Opponent Player.</span>';
-            return;
-        }
-        if (opponentId && shooterId === opponentId) {
-            logOut.innerHTML = '<span class="error">Shooter and Opponent cannot be the same player.</span>';
-            return;
-        }
-        
-        if (logBtn) logBtn.disabled = true;
-        logOut.innerHTML = '<em>Logging event...</em>';
-
-        try {
-            const payload = {
-                game_id: gameId,
-                round_number: currentRound,
-                sequence_number: sequenceNumber,
-                player_id: shooterId,
-                player_team_id: shooterTeamId,
-                opponent_player_id: opponentId,
-                opponent_team_id: opponentTeamId,
-                event_type: eventType,
-                player_lp_delta: playerLpDelta // <--- Correct LP Delta sent to server
-            };
-            
-            await API.post(`/api/game/${gameId}/event`, payload); 
-            
-            logOut.innerHTML = `<span class="success">Event #${sequenceNumber} logged! Updating state...</span>`;
-            
-            await loadGameState(gameId); 
-
-        } catch (e) {
-            logOut.innerHTML = `<span class="error">${e.message || 'Failed to log event.'}</span>`;
-        } finally {
-            if (logBtn) logBtn.disabled = false;
-        }
-    };
-
-    const handleUndoEvent = async () => {
-        const gameId = LEAGUE_ID;
-        const currentRound = GAME_STATE.current_round?.number ?? 1;
-        const logOut = document.getElementById('eventLogOut');
-        const undoBtn = document.getElementById('undoEventBtn');
-
-        if (!GAME_STATE.current_round || (GAME_STATE.current_round.events || []).length === 0) {
-            logOut.innerHTML = '<span class="error">No events to undo in this round.</span>';
-            return;
-        }
-
-        if (!confirm('Are you sure you want to undo the LATEST event?')) {
-            return;
-        }
-
-        if (undoBtn) undoBtn.disabled = true;
-        logOut.innerHTML = '<em>Undoing last event...</em>';
-
-        try {
-            await API.post(`/api/game/${gameId}/round/${currentRound}/undo`);
-            
-            logOut.innerHTML = `<span class="success">Last event successfully undone. Updating state...</span>`;
-            
-            await loadGameState(gameId); 
-
-        } catch (e) {
-            logOut.innerHTML = `<span class="error">${e.message || 'Failed to undo event.'}</span>`;
-        } finally {
-            if (undoBtn) undoBtn.disabled = false;
-        }
-    };
-    
-    const handleScheduleGame = async () => {
-        // Note: Selectors are guaranteed to exist here due to loadRecordGameView structure
-        const home_team = document.getElementById('homeTeamSelect').value;
-        const away_team = document.getElementById('awayTeamSelect').value;
-        const gameRecordOutLocal = document.getElementById('gameRecordOut');
-        const scheduleGameBtnLocal = document.getElementById('scheduleGameBtn');
-        
-        if (gameRecordOutLocal) gameRecordOutLocal.textContent = '';
-        
-        if (!home_team || !away_team || home_team === '0' || away_team === '0') {
-            gameRecordOutLocal.innerHTML = '<span class="error">Please select both teams.</span>';
-            return;
-        }
-        if (home_team === away_team) {
-            gameRecordOutLocal.innerHTML = '<span class="error">Home and Away teams must be different.</span>';
-            return;
-        }
-
-        if (scheduleGameBtnLocal) scheduleGameBtnLocal.disabled = true;
-        gameRecordOutLocal.innerHTML = '<em>Scheduling game...</em>';
-
-        try {
-            const payload = {
-                league_id: LEAGUE_DATA.league_id, // Use the league ID from the loaded data
-                home_team: parseInt(home_team),
-                away_team: parseInt(away_team),
-                // NOTE: round_best_of defaults to 3 on the backend for now
-            };
-            
-            const resp = await API.post('/api/games', payload); 
-            
-            gameRecordOutLocal.innerHTML = `<span class="success">${resp.message} (ID: ${resp.game_id}). Loading scoring interface...</span>`;
-            
-            // NOTE: The backend needs the game ID for subsequent event logging, 
-            // so we temporarily set LEAGUE_ID (which is used as gameId in the scoring handlers)
-            LEAGUE_ID = resp.game_id;
-            await loadGameState(resp.game_id);
-
-        } catch (e) {
-            gameRecordOutLocal.innerHTML = `<span class="error">${e.message || 'Failed to schedule game.'}</span>`;
-        } finally {
-            if (scheduleGameBtnLocal) {
-                scheduleGameBtnLocal.disabled = false;
-            }
-        }
-    };
-
-    // --- New Game State Loader Function (Initializes scoring UI) ---
-    const loadGameState = async (gameId) => {
-        const recordView = document.getElementById('viewRecordGame');
-        
-        // Switch the view to ensure we are showing the scoring interface
-        document.querySelectorAll('.view-switcher button').forEach(b => b.classList.remove('active'));
-        const btnRecord = document.getElementById('btnRecordGame');
-        if (btnRecord) btnRecord.classList.add('active');
-        
-        viewContents.forEach(div => div.classList.add('hidden'));
-        if (recordView) recordView.classList.remove('hidden');
-
-        if (recordView) recordView.innerHTML = `<h3>Game #${gameId} Scoring Interface Loading...</h3>`;
-        
-        try {
-            const state = await API.get(`/api/game/${gameId}/state`);
-            LEAGUE_ID = gameId; // Set LEAGUE_ID to gameId for event logging 
-            GAME_STATE = state; // Store state globally
-            
-            const scoring = state.current_round.score;
-            const homeRoster = state.rosters[state.game_header.home_team_id] || [];
-            const awayRoster = state.rosters[state.game_header.away_team_id] || [];
-            
-            // --- 1. Score Display (Updated to include Finalize/Advance buttons) ---
-            let scoreDisplay = `<div class="card" style="border: 2px solid #007bff; padding: 15px; margin-bottom: 20px;">`;
-            scoreDisplay += `<h4>Game ${gameId}: ${state.game_header.home_name} vs ${state.game_header.away_name}</h4>`;
-            scoreDisplay += `<p>Status: ${state.game_header.status} | Round ${state.current_round.number} Status: ${state.current_round.status}</p>`;
-            
-            scoreDisplay += `<p style="font-size: 1.5em; text-align: center; margin: 10px 0;">`;
-            scoreDisplay += `<strong>${state.game_header.home_name}: ${scoring.home_score}</strong> - `;
-            scoreDisplay += `<strong>${state.game_header.away_name}: ${scoring.away_score}</strong>`;
-            scoreDisplay += `</p>`;
-
-            if (scoring.is_over) {
-                scoreDisplay += `<p style="color: red; font-weight: bold; text-align: center;">ROUND OVER! Winner: Team ${scoring.winner_id}.</p>`;
-                scoreDisplay += `<div style="text-align: center; margin-top: 10px;">`;
-                
-                if (state.game_header.status === 'Completed') {
-                    // Game is finished, need to finalize stats
-                    scoreDisplay += `<p style="font-weight: bold; color: green;">The match is over. Click below to finalize results!</p>`;
-                    scoreDisplay += `<button id="finalizeGameBtn">Finalize Game Metrics</button>`;
-                } else if (state.game_header.status === 'Scheduled' || state.game_header.status === 'In Progress') {
-                    // Round is finished, advance to the next round
-                    scoreDisplay += `<button id="advanceRoundBtn">Finalize Round ${state.current_round.number} & Advance</button>`;
-                }
-                scoreDisplay += `</div>`;
-            }
-            scoreDisplay += `</div>`;
-            
-            // --- 2. Roster and Event Log ---
-            let rostersHtml = `<div style="display: flex; gap: 40px; margin-bottom: 20px;">`;
-            rostersHtml += `<div><h4>${state.game_header.home_name} Roster:</h4><ul>${homeRoster.map(p => `<li>${p.first_name} ${p.last_name} (ID: ${p.player_id})</li>`).join('')}</ul></div>`;
-            rostersHtml += `<div><h4>${state.game_header.away_name} Roster:</h4><ul>${awayRoster.map(p => `<li>${p.first_name} ${p.last_name} (ID: ${p.player_id})</li>`).join('')}</ul></div>`;
-            rostersHtml += `</div>`;
-            
-            let eventsHtml = '<h4>Event Log:</h4>';
-            eventsHtml += `<p>Next Event Number: ${scoring.next_sequence}</p>`; 
-
-            eventsHtml += `<div class="event-log-container">`;
-            if ((state.current_round.events || []).length > 0) {
-                eventsHtml += `<ul>${state.current_round.events.map(e => `<li>#${e.sequence_number}: ${e.event_type} (P: ${e.player_id})</li>`).join('')}</ul>`;
-            } else {
-                eventsHtml += '<p>No events recorded yet.</p>';
-            }
-            eventsHtml += `</div>`;
-
-
-            // --- 3. Scoring Form ---
-            let scoringFormHtml = `<div class="card" style="margin-top: 20px;">
-                <h4>Record New Event (Sequence: ${scoring.next_sequence})</h4>
-                <div id="gameScoringForm">
-                    
-                    <div>
-                        <div class="label">Shooter/Player Acting:</div>
-                        <select id="playerShooter" class="event-player-select"></select>
-                    </div>
-                    
-                    <div>
-                        <div class="label">Opponent Player (Required for Hits/Plinks/Kicks):</div>
-                        <select id="playerOpponent" class="event-player-select"></select>
-                    </div>
-
-                    <div class="full-row">
-                        <div class="label">Event Type:</div>
-                        <select id="eventTypeSelect">
-                            <option value="0" disabled selected>-- Select Event Type --</option>
-                            <option value="HIT_DROP">Hit Drop (+1 LP)</option>
-                            <option value="HIT_CATCH">Hit Catch (+0 LP)</option>
-                            <option value="PLINK_DROP">Plink Drop (+2 LP)</option>
-                            <option value="PLINK_TABLE">Plink Table (+1 LP)</option>
-                            <option value="PLINK_CATCH">Plink Catch (+1 LP)</option>
-                            <option value="PLUNK">Plunk (Win Round)</option>
-                            <option value="MISS">Miss (+0 LP)</option>
-                            <option value="KICK">Kick (-1 LP)</option>
-                            <option value="SELF_FIELD_GOAL">Self Field Goal (-1 LP)</option>
-                        </select>
-                    </div>
-                    
-                    <div class="full-row">
-                        <button id="logEventBtn">Log Event</button>
-                        <button id="undoEventBtn" style="background-color: #dc3545;">Undo Last Event</button>
-                        <div id="eventLogOut" class="results"></div>
-                    </div>
-                </div>
-            </div>`;
-            // -----------------------------
-
-            if (recordView) recordView.innerHTML = scoreDisplay + rostersHtml + eventsHtml + scoringFormHtml;
-            
-            // 4. Populate Selectors and Attach Handlers
-            const fullRoster = [...homeRoster, ...awayRoster].sort((a, b) => a.last_name.localeCompare(b.last_name));
-            const playerOptions = fullRoster.map(p => 
-                `<option value="${p.player_id}" data-team-id="${p.team_id}">${p.first_name} ${p.last_name} (Team ${p.team_id})</option>`
-            ).join('');
-
-            const defaultPlayerOption = '<option value="0" disabled selected>-- Select Player --</option>';
-
-            const shooterEl = document.getElementById('playerShooter');
-            const oppEl = document.getElementById('playerOpponent');
-            if (shooterEl) shooterEl.innerHTML = defaultPlayerOption + playerOptions;
-            if (oppEl) oppEl.innerHTML = defaultPlayerOption + playerOptions;
-
-            const logBtnEl = document.getElementById('logEventBtn');
-            const undoBtnEl = document.getElementById('undoEventBtn');
-            if (logBtnEl) logBtnEl.onclick = handleLogEvent;
-            if (undoBtnEl) undoBtnEl.onclick = handleUndoEvent;
-            
-            // 5. Attach Finalization/Advance Handlers if round is over
-            if (scoring.is_over) {
-                const btnAdvance = document.getElementById('advanceRoundBtn');
-                const btnFinalize = document.getElementById('finalizeGameBtn');
-                const header = state.game_header;
-
-                if (btnAdvance) {
-                    btnAdvance.onclick = () => handleAdvanceRound(
-                        header.id, 
-                        state.current_round.number, 
-                        scoring.winner_id,
-                        scoring.home_score,
-                        scoring.away_score
-                    );
-                }
-                if (btnFinalize) {
-                    btnFinalize.onclick = () => handleFinalizeGame(header.id);
-                }
-            }
-
-
-        } catch (e) {
-            if (recordView) recordView.innerHTML = `<span class="error">Failed to load game state: ${e.message}</span>`;
-        }
-    };
-
-    // --- Record Game View Loader (Team Selection) ---
-    const loadRecordGameView = async () => {
-        // If we have a GAME_STATE loaded, keep showing the scoring interface
-        if (GAME_STATE.game_header && GAME_STATE.game_header.id) {
-            await loadGameState(GAME_STATE.game_header.id);
-            return;
-        }
-        
-        const recordView = document.getElementById('viewRecordGame');
-        if (!recordView) return;
-
-        recordView.innerHTML = `
+        <div id="viewRecordGame" class="hidden">
             <h3>Schedule & Record New Game</h3>
             <div class="card">
                 <div class="input-row"><div class="label">Home Team</div><select id="homeTeamSelect"></select></div>
@@ -676,126 +113,770 @@
                 <button id="scheduleGameBtn">Schedule & Record Game</button>
                 <div id="gameRecordOut" class="results"></div>
             </div>
-        `;
+        </div>
+
+    </div>
+</main>
+
+<script src="/static/js/api.js"></script>
+
+    <script>
+    // Basic runtime check: ensure API object exists (api.js should define it)
+    if (typeof API === 'undefined') {
+        console.error('API object not found. Make sure /static/js/api.js defines a global "API" with get/post helpers.');
+    }
+
+    // Store global league data once loaded
+    let LEAGUE_ID = null; 
+    let LEAGUE_DATA = {}; // Holds latest state from /api/league/{id}/details
+    let GAME_STATE = {}; // Holds latest state from /api/game/{id}/state
+
+    // --- Global Elements ---
+    const playersView = document.getElementById('viewPlayers');
+    const viewContents = document.querySelectorAll('.view-content > div'); // Defined globally for easy access
+    // ... (rest of global elements) ...
+    const teamCreateSection = document.getElementById('teamCreateSection');
+    const teamsList = document.getElementById('teamsList');
+    const createTeamOut = document.getElementById('createTeamOut');
+    const newTeamNameInput = document.getElementById('newTeamName');
+    const createTeamBtn = document.getElementById('createTeamBtn');
+    const userTeamInfo = document.getElementById('userTeamInfo');
+
+
+    // --- Logout Handler (Required for dynamic navigation) ---
+    const handleLogout = async () => { 
+        try {
+            await API.post('/api/auth/logout'); 
+        } catch (e) {
+            console.error("Logout API failed, but proceeding with client logout:", e);
+        } finally {
+            window.location.href = '/'; 
+        }
+    };
+
+    const attachLogoutHandler = () => { 
+        const logoutButton = document.getElementById('logoutBtn');
+        if (logoutButton) {
+            logoutButton.addEventListener('click', handleLogout);
+        }
+    };
+
+    // --- View Switching Logic ---
+    // viewContents is defined globally
+    document.querySelectorAll('.view-switcher button').forEach(button => {
+        button.onclick = async (e) => {
+            const viewId = e.target.dataset.view;
+            
+            // Toggle active class on buttons
+            document.querySelectorAll('.view-switcher button').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+
+            // Toggle visibility of content divs
+            viewContents.forEach(div => div.classList.add('hidden'));
+            const targetId = `view${viewId.charAt(0).toUpperCase() + viewId.slice(1)}`;
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) targetEl.classList.remove('hidden');
+
+            // Dynamically load data based on view
+            if (viewId === 'players') await loadPlayersView();
+            if (viewId === 'teams') await loadTeamsView();
+            if (viewId === 'recordGame') await loadRecordGameView();
+            if (viewId === 'stats') await loadStatsView(); 
+            // TODO: loadStandingsView
+        };
+    });
+
+    
+    // --- Roster Loading Function ---
+    const loadPlayersView = async () => {
+        playersView.innerHTML = "<em>Loading players...</em>";
+        
+        if (!LEAGUE_ID) {
+            playersView.innerHTML = `<span class="error">Cannot load roster: League ID is missing.</span>`;
+            return;
+        }
+
+        try {
+            const roster = await API.get(`/api/league/${LEAGUE_ID}/roster`);
+            playersView.innerHTML = "<h4>Active Players</h4>";
+
+            if (!Array.isArray(roster) || roster.length === 0) {
+                playersView.innerHTML += "<p>No players have joined this league yet.</p>";
+                return;
+            }
+
+            const list = document.createElement('ul');
+            roster.forEach(p => {
+                const item = document.createElement('li');
+                item.textContent = `${p.first_name} ${p.last_name} (${p.email}) - Role: ${p.role}`;
+                list.appendChild(item);
+            });
+            playersView.appendChild(list);
+
+        } catch (e) {
+            playersView.innerHTML = `<span class="error">Failed to load roster: ${e.message}</span>`;
+        }
+    };
+
+    // --- Team Handlers ---
+
+    // --- Handler to Create a New Team ---
+    const handleCreateTeam = async () => {
+        const teamName = newTeamNameInput.value.trim();
+        createTeamOut.textContent = '';
+        if (!teamName) {
+            createTeamOut.innerHTML = '<span class="error">Please enter a team name.</span>';
+            return;
+        }
+
+        if (!LEAGUE_ID) {
+            createTeamOut.innerHTML = '<span class="error">League ID is missing. Cannot create team.</span>';
+            return;
+        }
+
+        createTeamBtn.disabled = true;
+        createTeamOut.innerHTML = '<em>Creating team...</em>';
+
+        try {
+            const payload = {
+                league_id: LEAGUE_ID,
+                name: teamName
+            };
+            
+            const resp = await API.post(`/api/league/${LEAGUE_ID}/teams`, payload);
+            
+            createTeamOut.innerHTML = `<span class="success">${resp.message}</span>`;
+            newTeamNameInput.value = ''; // Clear input
+
+            // Reload the Teams View to show the new team and update user status
+            await loadTeamsView(); 
+
+        } catch (e) {
+            createTeamOut.innerHTML = `<span class="error">Failed to create team: ${e.message}</span>`;
+        } finally {
+            createTeamBtn.disabled = false;
+        }
+    };
+
+    // --- Handler to Join an Existing Team ---
+    const handleJoinTeam = async (teamId) => {
+        if (!LEAGUE_ID) {
+            alert("Error: League ID missing.");
+            return;
+        }
+        
+        // Find the specific results container for feedback (optional, but good practice)
+        // const teamCardEl = document.querySelector(`.joinTeamBtn[data-id="${teamId}"]`).closest('.team-card');
+        // if (!teamCardEl) return; 
+        
+        if (!confirm(`Are you sure you want to join Team ID ${teamId}?`)) return;
+
+        try {
+            const resp = await API.post(`/api/team/${teamId}/join`);
+            alert(resp.message);
+            
+            // Reload the Teams View to update the member list and hide the join/create forms
+            await loadTeamsView(); 
+            // Also reload league data to update the top banner's userTeamInfo
+            await loadLeagueData();
+
+        } catch (e) {
+            alert("Failed to join team: " + e.message);
+        }
+    };
+
+    // --- Function to Attach Join Handlers (called after rendering teams) ---
+    const attachJoinTeamHandlers = () => {
+        document.querySelectorAll('.joinTeamBtn').forEach(button => {
+            button.onclick = (e) => {
+                const teamId = e.target.dataset.id;
+                handleJoinTeam(teamId);
+            };
+        });
+    };
+
+    // --- Teams View Loading Function ---
+    const loadTeamsView = async () => {
+        teamsList.innerHTML = "<em>Loading teams...</em>";
+        if (teamCreateSection) teamCreateSection.style.display = 'none'; 
+        if (createTeamOut) createTeamOut.textContent = '';
+        
+        if (!LEAGUE_ID) {
+            teamsList.innerHTML = `<span class="error">Cannot load teams: League ID is missing.</span>`;
+            return;
+        }
+
+        try {
+            const response = await API.get(`/api/league/${LEAGUE_ID}/teams`);
+            const teams = response.teams || [];
+            const userTeamId = response.user_team_id || null;
+            
+            const MAX_SIZE = 2;
+            
+            // 1. Determine user status
+            if (userTeamId) {
+                if (teamCreateSection) teamCreateSection.style.display = 'none';
+                userTeamInfo.innerHTML = `On Team: <strong>Team ID ${userTeamId}</strong>`;
+            } else {
+                if (teamCreateSection) teamCreateSection.style.display = 'block'; 
+                userTeamInfo.textContent = `Not on a team.`;
+            }
+
+            // 2. Render the list of teams
+            teamsList.innerHTML = `<h4>Current Teams (Max size: ${MAX_SIZE})</h4>`;
+            
+            if (teams.length === 0) {
+                teamsList.innerHTML += "<p>No teams have been created yet. Use the form above to create the first team.</p>";
+                return;
+            }
+
+            teams.forEach(t => {
+                const teamCard = document.createElement('div');
+                teamCard.className = 'card team-card';
+                
+                const isFull = t.current_size >= MAX_SIZE;
+                const memberNames = (t.members || []).map(m => m.name).join(', ') || '— Empty —';
+
+                let buttonHtml = '';
+                if (userTeamId === null) {
+                    if (isFull) {
+                        buttonHtml = '<button disabled style="background-color: #dc3545;">Team is Full</button>';
+                    } else {
+                        buttonHtml = `<button class="joinTeamBtn" data-id="${t.team_id}">Join Team</button>`;
+                    }
+                } else if (t.team_id === userTeamId) {
+                    buttonHtml = '<span style="color: green; font-weight: bold; float: right;">(Your Team)</span>';
+                }
+                
+                teamCard.innerHTML = `
+                    <strong>${t.name}</strong> 
+                    <span style="float: right;">Players: ${t.current_size}/${MAX_SIZE}</span><br>
+                    Members: ${memberNames}<br>
+                    ${buttonHtml}
+                `;
+                teamsList.appendChild(teamCard);
+            });
+            
+            attachJoinTeamHandlers(); // Attach handlers to the dynamically created buttons
+
+        } catch (e) {
+            teamsList.innerHTML = `<span class="error">Failed to load teams: ${e.message}</span>`;
+        }
+    };
+
+    // --- Game Recording Handlers and Loaders ---
+
+    const handleAdvanceRound = async (gameId, roundNumber, winnerTeamId, homeScore, awayScore) => {
+        if (!confirm(`Are you sure you want to finalize Round ${roundNumber} (Winner: Team ${winnerTeamId}) and advance?`)) return;
+        
+        try {
+            const resp = await API.post(`/api/game/${gameId}/round/finalize`, {
+                round_number: roundNumber,
+                winner_team_id: winnerTeamId,
+                home_score: homeScore, 
+                away_score: awayScore 
+            });
+            alert(resp.message);
+            await loadGameState(gameId);
+        } catch (e) {
+            alert("Failed to advance round: " + e.message);
+        }
+    };
+
+    const handleFinalizeGame = async (gameId) => {
+        if (!confirm('Are you sure you want to finalize the entire game and tally stats? This action cannot be undone.')) return;
+        try {
+            const resp = await API.post(`/api/games/${gameId}/finalize`); // CORRECTED: Plural /games/
+            alert(resp.message);
+            await loadGameState(gameId); 
+        } catch (e) {
+            alert("Failed to finalize game: " + e.message);
+        }
+    };
+
+    const handleLogEvent = async () => {
+        const gameId = LEAGUE_ID;
+        const shooterSelect = document.getElementById('playerShooter');
+        const opponentSelect = document.getElementById('playerOpponent');
+        const eventTypeSelect = document.getElementById('eventTypeSelect');
+        const logOut = document.getElementById('eventLogOut');
+        const logBtn = document.getElementById('logEventBtn');
+
+        if (!logOut) return;
+
+        logOut.textContent = '';
+        
+        if (!shooterSelect || !eventTypeSelect) {
+            logOut.innerHTML = '<span class="error">UI not ready. Shooter or event type selector missing.</span>';
+            return;
+        }
+
+        if (!shooterSelect.value || eventTypeSelect.value === '0') {
+            logOut.innerHTML = '<span class="error">Must select a Shooter/Player and an Event Type.</span>';
+            return;
+        }
+        
+        const sequenceNumber = GAME_STATE.current_round?.score?.next_sequence ?? 1; 
+        const currentRound = GAME_STATE.current_round?.number ?? 1;
+
+        const shooterId = parseInt(shooterSelect.value);
+        const shooterTeamId = parseInt(shooterSelect.options[shooterSelect.selectedIndex].dataset.teamId);
+        
+        const opponentId = opponentSelect && opponentSelect.value ? parseInt(opponentSelect.value) : null;
+        const opponentTeamId = opponentSelect && opponentSelect.value ? parseInt(opponentSelect.options[opponentSelect.selectedIndex].dataset.teamId) : null;
+        
+        const eventType = eventTypeSelect.value;
+        let playerLpDelta = 0;
+        
+        // --- Calculate LP Delta (Crucial client-side logic added) ---
+        switch (eventType) {
+            case 'HIT_DROP':
+            case 'PLINK_CATCH':
+            case 'PLINK_TABLE':
+                playerLpDelta = 1;
+                break;
+            case 'PLINK_DROP':
+                playerLpDelta = 2;
+                break;
+            case 'KICK':
+            case 'SELF_FIELD_GOAL':
+                playerLpDelta = -1;
+                break;
+            case 'PLUNK':
+                playerLpDelta = 99; // Plunk means the round ends, use a placeholder large number
+                break;
+            case 'HIT_CATCH':
+            case 'MISS':
+            default:
+                playerLpDelta = 0;
+                break;
+        }
+        
+        // --- Basic Validation (needsOpponent is still based on rules) ---
+        const needsOpponent = ['HIT_DROP', 'PLINK_DROP', 'PLINK_CATCH', 'HIT_CATCH', 'KICK'];
+        if (needsOpponent.includes(eventType) && !opponentId) {
+            logOut.innerHTML = '<span class="error">This event requires an Opponent Player.</span>';
+            return;
+        }
+        if (opponentId && shooterId === opponentId) {
+            logOut.innerHTML = '<span class="error">Shooter and Opponent cannot be the same player.</span>';
+            return;
+        }
+        
+        if (logBtn) logBtn.disabled = true;
+        logOut.innerHTML = '<em>Logging event...</em>';
+
+        try {
+            const payload = {
+                game_id: gameId,
+                round_number: currentRound,
+                sequence_number: sequenceNumber,
+                player_id: shooterId,
+                player_team_id: shooterTeamId,
+                opponent_player_id: opponentId,
+                opponent_team_id: opponentTeamId,
+                event_type: eventType,
+                player_lp_delta: playerLpDelta // <--- Correct LP Delta sent to server
+            };
+            
+            await API.post(`/api/game/${gameId}/event`, payload); 
+            
+            logOut.innerHTML = `<span class="success">Event #${sequenceNumber} logged! Updating state...</span>`;
+            
+            await loadGameState(gameId); 
+
+        } catch (e) {
+            logOut.innerHTML = `<span class="error">${e.message || 'Failed to log event.'}</span>`;
+        } finally {
+            if (logBtn) logBtn.disabled = false;
+        }
+    };
+
+    const handleUndoEvent = async () => {
+        const gameId = LEAGUE_ID;
+        const currentRound = GAME_STATE.current_round?.number ?? 1;
+        const logOut = document.getElementById('eventLogOut');
+        const undoBtn = document.getElementById('undoEventBtn');
+
+        if (!GAME_STATE.current_round || (GAME_STATE.current_round.events || []).length === 0) {
+            logOut.innerHTML = '<span class="error">No events to undo in this round.</span>';
+            return;
+        }
+
+        if (!confirm('Are you sure you want to undo the LATEST event?')) {
+            return;
+        }
+
+        if (undoBtn) undoBtn.disabled = true;
+        logOut.innerHTML = '<em>Undoing last event...</em>';
+
+        try {
+            await API.post(`/api/game/${gameId}/round/${currentRound}/undo`);
+            
+            logOut.innerHTML = `<span class="success">Last event successfully undone. Updating state...</span>`;
+            
+            await loadGameState(gameId); 
+
+        } catch (e) {
+            logOut.innerHTML = `<span class="error">${e.message || 'Failed to undo event.'}</span>`;
+        } finally {
+            if (undoBtn) undoBtn.disabled = false;
+        }
+    };
+    
+    const handleScheduleGame = async () => {
+        // Note: Selectors are guaranteed to exist here due to loadRecordGameView structure
+        const home_team = document.getElementById('homeTeamSelect').value;
+        const away_team = document.getElementById('awayTeamSelect').value;
+        const gameRecordOutLocal = document.getElementById('gameRecordOut');
+        const scheduleGameBtnLocal = document.getElementById('scheduleGameBtn');
+        
+        if (gameRecordOutLocal) gameRecordOutLocal.textContent = '';
+        
+        if (!home_team || !away_team || home_team === '0' || away_team === '0') {
+            gameRecordOutLocal.innerHTML = '<span class="error">Please select both teams.</span>';
+            return;
+        }
+        if (home_team === away_team) {
+            gameRecordOutLocal.innerHTML = '<span class="error">Home and Away teams must be different.</span>';
+            return;
+        }
+
+        if (scheduleGameBtnLocal) scheduleGameBtnLocal.disabled = true;
+        gameRecordOutLocal.innerHTML = '<em>Scheduling game...</em>';
+
+        try {
+            const payload = {
+                league_id: LEAGUE_DATA.league_id, // Use the league ID from the loaded data
+                home_team: parseInt(home_team),
+                away_team: parseInt(away_team),
+                // NOTE: round_best_of defaults to 3 on the backend for now
+            };
+            
+            const resp = await API.post('/api/games', payload); 
+            
+            gameRecordOutLocal.innerHTML = `<span class="success">${resp.message} (ID: ${resp.game_id}). Loading scoring interface...</span>`;
+            
+            // NOTE: The backend needs the game ID for subsequent event logging, 
+            // so we temporarily set LEAGUE_ID (which is used as gameId in the scoring handlers)
+            LEAGUE_ID = resp.game_id;
+            await loadGameState(resp.game_id);
+
+        } catch (e) {
+            gameRecordOutLocal.innerHTML = `<span class="error">${e.message || 'Failed to schedule game.'}</span>`;
+        } finally {
+            if (scheduleGameBtnLocal) {
+                scheduleGameBtnLocal.disabled = false;
+            }
+        }
+    };
+
+    // --- New Game State Loader Function (Initializes scoring UI) ---
+    const loadGameState = async (gameId) => {
+        const recordView = document.getElementById('viewRecordGame');
+        
+        // Switch the view to ensure we are showing the scoring interface
+        document.querySelectorAll('.view-switcher button').forEach(b => b.classList.remove('active'));
+        const btnRecord = document.getElementById('btnRecordGame');
+        if (btnRecord) btnRecord.classList.add('active');
+        
+        viewContents.forEach(div => div.classList.add('hidden'));
+        if (recordView) recordView.classList.remove('hidden');
+
+        if (recordView) recordView.innerHTML = `<h3>Game #${gameId} Scoring Interface Loading...</h3>`;
+        
+        try {
+            const state = await API.get(`/api/game/${gameId}/state`);
+            LEAGUE_ID = gameId; // Set LEAGUE_ID to gameId for event logging 
+            GAME_STATE = state; // Store state globally
+            
+            const scoring = state.current_round.score;
+            const homeRoster = state.rosters[state.game_header.home_team_id] || [];
+            const awayRoster = state.rosters[state.game_header.away_team_id] || [];
+            
+            // --- 1. Score Display (Updated to include Finalize/Advance buttons) ---
+            let scoreDisplay = `<div class="card" style="border: 2px solid #007bff; padding: 15px; margin-bottom: 20px;">`;
+            scoreDisplay += `<h4>Game ${gameId}: ${state.game_header.home_name} vs ${state.game_header.away_name}</h4>`;
+            scoreDisplay += `<p>Status: ${state.game_header.status} | Round ${state.current_round.number} Status: ${state.current_round.status}</p>`;
+            
+            scoreDisplay += `<p style="font-size: 1.5em; text-align: center; margin: 10px 0;">`;
+            scoreDisplay += `<strong>${state.game_header.home_name}: ${scoring.home_score}</strong> - `;
+            scoreDisplay += `<strong>${state.game_header.away_name}: ${scoring.away_score}</strong>`;
+            scoreDisplay += `</p>`;
+
+            if (scoring.is_over) {
+                scoreDisplay += `<p style="color: red; font-weight: bold; text-align: center;">ROUND OVER! Winner: Team ${scoring.winner_id}.</p>`;
+                scoreDisplay += `<div style="text-align: center; margin-top: 10px;">`;
+                
+                if (state.game_header.status === 'Completed') {
+                    // Game is finished, need to finalize stats
+                    scoreDisplay += `<p style="font-weight: bold; color: green;">The match is over. Click below to finalize results!</p>`;
+                    scoreDisplay += `<button id="finalizeGameBtn">Finalize Game Metrics</button>`;
+                } else if (state.game_header.status === 'Scheduled' || state.game_header.status === 'In Progress') {
+                    // Round is finished, advance to the next round
+                    scoreDisplay += `<button id="advanceRoundBtn">Finalize Round ${state.current_round.number} & Advance</button>`;
+                }
+                scoreDisplay += `</div>`;
+            }
+            scoreDisplay += `</div>`;
+            
+            // --- 2. Roster and Event Log ---
+            let rostersHtml = `<div style="display: flex; gap: 40px; margin-bottom: 20px;">`;
+            rostersHtml += `<div><h4>${state.game_header.home_name} Roster:</h4><ul>${homeRoster.map(p => `<li>${p.first_name} ${p.last_name} (ID: ${p.player_id})</li>`).join('')}</ul></div>`;
+            rostersHtml += `<div><h4>${state.game_header.away_name} Roster:</h4><ul>${awayRoster.map(p => `<li>${p.first_name} ${p.last_name} (ID: ${p.player_id})</li>`).join('')}</ul></div>`;
+            rostersHtml += `</div>`;
+            
+            let eventsHtml = '<h4>Event Log:</h4>';
+            eventsHtml += `<p>Next Event Number: ${scoring.next_sequence}</p>`; 
+
+            eventsHtml += `<div class="event-log-container">`;
+            if ((state.current_round.events || []).length > 0) {
+                eventsHtml += `<ul>${state.current_round.events.map(e => `<li>#${e.sequence_number}: ${e.event_type} (P: ${e.player_id})</li>`).join('')}</ul>`;
+            } else {
+                eventsHtml += '<p>No events recorded yet.</p>';
+            }
+            eventsHtml += `</div>`;
+
+
+            // --- 3. Scoring Form ---
+            let scoringFormHtml = `<div class="card" style="margin-top: 20px;">
+                <h4>Record New Event (Sequence: ${scoring.next_sequence})</h4>
+                <div id="gameScoringForm">
+                    
+                    <div>
+                        <div class="label">Shooter/Player Acting:</div>
+                        <select id="playerShooter" class="event-player-select"></select>
+                    </div>
+                    
+                    <div>
+                        <div class="label">Opponent Player (Required for Hits/Plinks/Kicks):</div>
+                        <select id="playerOpponent" class="event-player-select"></select>
+                    </div>
+
+                    <div class="full-row">
+                        <div class="label">Event Type:</div>
+                        <select id="eventTypeSelect">
+                            <option value="0" disabled selected>-- Select Event Type --</option>
+                            <option value="HIT_DROP">Hit Drop (+1 LP)</option>
+                            <option value="HIT_CATCH">Hit Catch (+0 LP)</option>
+                            <option value="PLINK_DROP">Plink Drop (+2 LP)</option>
+                            <option value="PLINK_TABLE">Plink Table (+1 LP)</option>
+                            <option value="PLINK_CATCH">Plink Catch (+1 LP)</option>
+                            <option value="PLUNK">Plunk (Win Round)</option>
+                            <option value="MISS">Miss (+0 LP)</option>
+                            <option value="KICK">Kick (-1 LP)</option>
+                            <option value="SELF_FIELD_GOAL">Self Field Goal (-1 LP)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="full-row">
+                        <button id="logEventBtn">Log Event</button>
+                        <button id="undoEventBtn" style="background-color: #dc3545;">Undo Last Event</button>
+                        <div id="eventLogOut" class="results"></div>
+                    </div>
+                </div>
+            </div>`;
+            // -----------------------------
+
+            if (recordView) recordView.innerHTML = scoreDisplay + rostersHtml + eventsHtml + scoringFormHtml;
+            
+            // 4. Populate Selectors and Attach Handlers
+            const fullRoster = [...homeRoster, ...awayRoster].sort((a, b) => a.last_name.localeCompare(b.last_name));
+            const playerOptions = fullRoster.map(p => 
+                `<option value="${p.player_id}" data-team-id="${p.team_id}">${p.first_name} ${p.last_name} (Team ${p.team_id})</option>`
+            ).join('');
+
+            const defaultPlayerOption = '<option value="0" disabled selected>-- Select Player --</option>';
+
+            const shooterEl = document.getElementById('playerShooter');
+            const oppEl = document.getElementById('playerOpponent');
+            if (shooterEl) shooterEl.innerHTML = defaultPlayerOption + playerOptions;
+            if (oppEl) oppEl.innerHTML = defaultPlayerOption + playerOptions;
+
+            const logBtnEl = document.getElementById('logEventBtn');
+            const undoBtnEl = document.getElementById('undoEventBtn');
+            if (logBtnEl) logBtnEl.onclick = handleLogEvent;
+            if (undoBtnEl) undoBtnEl.onclick = handleUndoEvent;
+            
+            // 5. Attach Finalization/Advance Handlers if round is over
+            if (scoring.is_over) {
+                const btnAdvance = document.getElementById('advanceRoundBtn');
+                const btnFinalize = document.getElementById('finalizeGameBtn');
+                const header = state.game_header;
+
+                if (btnAdvance) {
+                    btnAdvance.onclick = () => handleAdvanceRound(
+                        header.id, 
+                        state.current_round.number, 
+                        scoring.winner_id,
+                        scoring.home_score,
+                        scoring.away_score
+                    );
+                }
+                if (btnFinalize) {
+                    btnFinalize.onclick = () => handleFinalizeGame(header.id);
+                }
+            }
+
+
+        } catch (e) {
+            if (recordView) recordView.innerHTML = `<span class="error">Failed to load game state: ${e.message}</span>`;
+        }
+    };
+
+    // --- Record Game View Loader (Team Selection) ---
+    const loadRecordGameView = async () => {
+        // If we have a GAME_STATE loaded, keep showing the scoring interface
+        if (GAME_STATE.game_header && GAME_STATE.game_header.id) {
+            await loadGameState(GAME_STATE.game_header.id);
+            return;
+        }
+        
+        const recordView = document.getElementById('viewRecordGame');
+        if (!recordView) return;
+
+        recordView.innerHTML = `
+            <h3>Schedule & Record New Game</h3>
+            <div class="card">
+                <div class="input-row"><div class="label">Home Team</div><select id="homeTeamSelect"></select></div>
+                <div class="input-row"><div class="label">Away Team</div><select id="awayTeamSelect"></select></div>
+                <button id="scheduleGameBtn">Schedule & Record Game</button>
+                <div id="gameRecordOut" class="results"></div>
+            </div>
+        `;
+        
+        // Re-get elements after innerHTML update
+        const selectHome = document.getElementById('homeTeamSelect');
+        const selectAway = document.getElementById('awayTeamSelect');
+        const btnSchedule = document.getElementById('scheduleGameBtn');
+        const outGame = document.getElementById('gameRecordOut');
+        
+        if (selectHome) selectHome.innerHTML = '<option value="0">Loading...</option>';
+        if (selectAway) selectAway.innerHTML = '<option value="0">Loading...</option>';
+
+        if (!LEAGUE_DATA.league_id) return;
+
+        try {
+            const response = await API.get(`/api/league/${LEAGUE_DATA.league_id}/teams`);
+            const teams = response.teams || [];
+
+            const optionsHtml = teams.map(t => `<option value="${t.team_id}">${t.name} (ID: ${t.team_id})</option>`).join('');
+            
+            const defaultOption = '<option value="0" disabled selected>-- Select Team --</option>';
+            
+            if (selectHome) selectHome.innerHTML = defaultOption + optionsHtml;
+            if (selectAway) selectAway.innerHTML = defaultOption + optionsHtml;
+            
+            if (btnSchedule) btnSchedule.onclick = handleScheduleGame;
+
+        } catch (e) {
+            if (outGame) outGame.innerHTML = `<span class="error">Failed to load teams for scheduling: ${e.message}</span>`;
+        }
+    };
+    
+    // --- Stats View Loading Function (NEW) ---
+    const loadStatsView = async () => {
+        const statsView = document.getElementById('viewStats');
+        if (!statsView) return;
+        statsView.innerHTML = "<em>Loading league statistics...</em>";
+
+        if (!LEAGUE_DATA.league_id) {
+            statsView.innerHTML = `<span class="error">Cannot load stats: League ID is missing.</span>`;
+            return;
+        }
+
+        try {
+            // Fetch stats, filtered by league_id
+            const stats = await API.get(`/api/stats?league_id=${LEAGUE_DATA.league_id}`);
+            
+            let html = '<h4>Player Season Statistics (League)</h4>';
+
+            if (!Array.isArray(stats) || stats.length === 0) {
+                html += '<p>No game results recorded yet to calculate statistics.</p>';
+                statsView.innerHTML = html;
+                return;
+            }
+
+            // Simple table structure for demonstration
+            html += '<table><thead><tr><th>Player</th><th>Category</th><th>Value</th></tr></thead><tbody>';
+            stats.forEach(s => {
+                html += `<tr><td>${s.player_name}</td><td>${s.category_name} (${s.category_code})</td><td>${s.metric_value}</td></tr>`;
+            });
+            html += '</tbody></table>';
+
+            statsView.innerHTML = html;
+
+        } catch (e) {
+            statsView.innerHTML = `<span class="error">Failed to load statistics: ${e.message}</span>`;
+        }
+    };
+
+    // --- Initial Handler Attachment Function ---
+    // Attaches handlers to elements that exist on initial page load (like the Create Team button).
+    const attachInitialHandlers = () => {
+        // 1. Team Creation Handler
+        if (createTeamBtn) {
+            createTeamBtn.onclick = handleCreateTeam;
+        }
         
-        // Re-get elements after innerHTML update
-        const selectHome = document.getElementById('homeTeamSelect');
-        const selectAway = document.getElementById('awayTeamSelect');
-        const btnSchedule = document.getElementById('scheduleGameBtn');
-        const outGame = document.getElementById('gameRecordOut');
-        
-        if (selectHome) selectHome.innerHTML = '<option value="0">Loading...</option>';
-        if (selectAway) selectAway.innerHTML = '<option value="0">Loading...</option>';
-
-        if (!LEAGUE_DATA.league_id) return;
-
-        try {
-            const response = await API.get(`/api/league/${LEAGUE_DATA.league_id}/teams`);
-            const teams = response.teams || [];
-
-            const optionsHtml = teams.map(t => `<option value="${t.team_id}">${t.name} (ID: ${t.team_id})</option>`).join('');
-            
-            const defaultOption = '<option value="0" disabled selected>-- Select Team --</option>';
-            
-            if (selectHome) selectHome.innerHTML = defaultOption + optionsHtml;
-            if (selectAway) selectAway.innerHTML = defaultOption + optionsHtml;
-            
-            if (btnSchedule) btnSchedule.onclick = handleScheduleGame;
-
-        } catch (e) {
-            if (outGame) outGame.innerHTML = `<span class="error">Failed to load teams for scheduling: ${e.message}</span>`;
-        }
-    };
-    
-    // --- Stats View Loading Function (NEW) ---
-    const loadStatsView = async () => {
-        const statsView = document.getElementById('viewStats');
-        if (!statsView) return;
-        statsView.innerHTML = "<em>Loading league statistics...</em>";
-
-        if (!LEAGUE_DATA.league_id) {
-            statsView.innerHTML = `<span class="error">Cannot load stats: League ID is missing.</span>`;
-            return;
-        }
-
-        try {
-            // Fetch stats, filtered by league_id
-            const stats = await API.get(`/api/stats?league_id=${LEAGUE_DATA.league_id}`);
-            
-            let html = '<h4>Player Season Statistics (League)</h4>';
-
-            if (!Array.isArray(stats) || stats.length === 0) {
-                html += '<p>No game results recorded yet to calculate statistics.</p>';
-                statsView.innerHTML = html;
-                return;
-            }
-
-            // Simple table structure for demonstration
-            html += '<table><thead><tr><th>Player</th><th>Category</th><th>Value</th></tr></thead><tbody>';
-            stats.forEach(s => {
-                html += `<tr><td>${s.player_name}</td><td>${s.category_name} (${s.category_code})</td><td>${s.metric_value}</td></tr>`;
-            });
-            html += '</tbody></table>';
-
-            statsView.innerHTML = html;
-
-        } catch (e) {
-            statsView.innerHTML = `<span class="error">Failed to load statistics: ${e.message}</span>`;
-        }
+        // Note: scheduleGameBtn is handled dynamically inside loadRecordGameView
     };
 
 
-    // --- Core Data Loading ---
-    const loadLeagueData = async () => {
-        const params = new URLSearchParams(window.location.search);
-        LEAGUE_ID = params.get('id'); // Initially set LEAGUE_ID from URL parameter
+    // --- Core Data Loading ---
+    const loadLeagueData = async () => {
+        const params = new URLSearchParams(window.location.search);
+        LEAGUE_ID = params.get('id'); // Initially set LEAGUE_ID from URL parameter
 
-        if (!LEAGUE_ID) {
-            document.getElementById('leagueHeader').textContent = "Error: League ID missing.";
-            return;
-        }
+        if (!LEAGUE_ID) {
+            document.getElementById('leagueHeader').textContent = "Error: League ID missing.";
+            return;
+        }
 
-        try {
-            const data = await API.get(`/api/league/${LEAGUE_ID}/details`);
-            LEAGUE_DATA = data;
-            
-            document.getElementById('pageTitle').textContent = `League: ${data.league_name}`;
-            document.getElementById('leagueHeader').textContent = data.league_name;
-            document.getElementById('leagueStatus').textContent = data.status;
-            document.getElementById('leagueYear').textContent = data.season_year;
-            document.getElementById('userRole').textContent = data.user_role;
-            
-            if (data.user_team_id) {
-                userTeamInfo.innerHTML = `On Team: <strong>Team ID ${data.user_team_id}</strong>`; 
-            } else {
-                userTeamInfo.textContent = `Not on a team.`;
-            }
+        try {
+            const data = await API.get(`/api/league/${LEAGUE_ID}/details`);
+            LEAGUE_DATA = data;
+            
+            document.getElementById('pageTitle').textContent = `League: ${data.league_name}`;
+            document.getElementById('leagueHeader').textContent = data.league_name;
+            document.getElementById('leagueStatus').textContent = data.status;
+            document.getElementById('leagueYear').textContent = data.season_year;
+            document.getElementById('userRole').textContent = data.user_role;
+            
+            if (data.user_team_id) {
+                userTeamInfo.innerHTML = `On Team: <strong>Team ID ${data.user_team_id}</strong>`; 
+            } else {
+                userTeamInfo.textContent = `Not on a team.`;
+            }
 
-            // --- Ensure only the active view is visible on load ---
-            viewContents.forEach(div => div.classList.add('hidden'));
-            document.getElementById('viewPlayers').classList.remove('hidden');
+            // --- Ensure only the active view is visible on load ---
+            viewContents.forEach(div => div.classList.add('hidden'));
+            document.getElementById('viewPlayers').classList.remove('hidden');
 
-            // Load content for the active view
-            await loadPlayersView(); 
-            
-        } catch (e) {
-            document.getElementById('leagueHeader').innerHTML = `<span class="error">Error loading league: ${e.message}</span>`;
-        }
-    };
-    
-    // --- Navigation Loading ---
-    fetch('/api/nav_content')
-        .then(r => r.text())
-        .then(h => { 
-            document.getElementById('nav').innerHTML = h;
-            attachLogoutHandler();
-        }).catch(err => {
-            console.warn('Failed to load nav content:', err);
-        });
+            // Load content for the active view
+            await loadPlayersView(); 
 
-    // Run the main loader
-    document.addEventListener('DOMContentLoaded', loadLeagueData);
+            // Attach static handlers now that LEAGUE_ID is available
+            attachInitialHandlers(); 
+            
+        } catch (e) {
+            document.getElementById('leagueHeader').innerHTML = `<span class="error">Error loading league: ${e.message}</span>`;
+        }
+    };
+    
+    // --- Navigation Loading ---
+    fetch('/api/nav_content')
+        .then(r => r.text())
+        .then(h => { 
+            document.getElementById('nav').innerHTML = h;
+            attachLogoutHandler();
+        }).catch(err => {
+            console.warn('Failed to load nav content:', err);
+        });
 
-    </script>
+    // Run the main loader
+    document.addEventListener('DOMContentLoaded', loadLeagueData);
+
+    </script>
 </body>
 </html>

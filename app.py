@@ -1140,15 +1140,12 @@ def create_game():
 def finalize_round(game_id):
     """
     Finalizes the current round's score and checks if the overall game is over.
-    This endpoint relies on the client (or server logic) knowing the winner.
     """
     data = request.get_json()
     round_number = data.get('round_number')
     winner_team_id = data.get('winner_team_id')
-    home_score = data.get('home_score') # Little points
-    away_score = data.get('away_score') # Little points
-    
-    user_id = session.get('user_id')
+    home_score = data.get('home_score')
+    away_score = data.get('away_score')
 
     if not all([round_number, winner_team_id]):
         return jsonify({"error": "Missing round data or winner information"}), 400
@@ -1159,97 +1156,102 @@ def finalize_round(game_id):
 
     cursor = conn.cursor()
     cursor_dict = conn.cursor(dictionary=True)
-    
+
     try:
-        # 1. Get Game/League/BestOf Info
-        game_info_query = "SELECT league_id, home_team, away_team, round_best_of FROM game WHERE game_id = %s"
-        cursor_dict.execute(game_info_query, (game_id,))
+        # 1. Fetch game info
+        cursor_dict.execute("""
+            SELECT league_id, home_team, away_team, round_best_of
+            FROM game WHERE game_id = %s
+        """, (game_id,))
         game_info = cursor_dict.fetchone()
+
         if not game_info:
             return jsonify({"error": "Game not found"}), 404
-        
+
         home_team_id = game_info['home_team']
         away_team_id = game_info['away_team']
         round_best_of = game_info['round_best_of']
-        
-        # 2. Update GameRound Status
-        update_round_query = """
-            UPDATE game_round 
+
+        # 2. Mark round as completed
+        cursor.execute("""
+            UPDATE game_round
             SET status = 'Completed', winner_team_id = %s
             WHERE game_id = %s AND round_number = %s AND status = 'Pending'
-        """
-        cursor.execute(update_round_query, (winner_team_id, game_id, round_number))
-        
+        """, (winner_team_id, game_id, round_number))
+
         if cursor.rowcount == 0:
-             return jsonify({"error": "Round not in 'Pending' status or already completed."}), 409
+            return jsonify({"error": "Round not in Pending state or already completed."}), 409
 
-        # 3. Insert RoundScore 
+        # 3. Insert Round Scores (Corrected team score assignment)
         is_home_winner = (winner_team_id == home_team_id)
-        
-        score_query = """
-            INSERT INTO round_score (game_id, round_number, team_id, little_points, big_point_awarded)
-            VALUES (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)
-        """
-        # Score for Home Team
-        home_lp_final = home_score if home_team_id == data.get('home_team') else away_score
-        
-        # Score for Away Team
-        away_lp_final = away_score if away_team_id == data.get('away_team') else home_score
 
-        cursor.execute(score_query, (
-            game_id, round_number, home_team_id, home_lp_final, is_home_winner,
-            game_id, round_number, away_team_id, away_lp_final, not is_home_winner
+        cursor.execute("""
+            INSERT INTO round_score (game_id, round_number, team_id, little_points, big_point_awarded)
+            VALUES 
+                (%s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s)
+        """, (
+            game_id, round_number, home_team_id, home_score, is_home_winner,
+            game_id, round_number, away_team_id, away_score, not is_home_winner
         ))
-        
-        # 4. Check for Overall Game End Condition
-        winning_rounds_needed = (round_best_of // 2) + 1
-        
-        rounds_won_query = """
-            SELECT winner_team_id, COUNT(*) as wins
+
+        # 4. Check if the match is finished
+        cursor_dict.execute("""
+            SELECT winner_team_id, COUNT(*) AS wins
             FROM game_round
             WHERE game_id = %s AND status = 'Completed'
             GROUP BY winner_team_id
-        """
-        cursor_dict.execute(rounds_won_query, (game_id,))
+        """, (game_id,))
         wins = cursor_dict.fetchall()
-        
+
+        winning_rounds_needed = (round_best_of // 2) + 1
         game_over = False
         overall_winner_id = None
-        
-        for team_wins in wins:
-            if team_wins['wins'] >= winning_rounds_needed:
+
+        for row in wins:
+            if row['wins'] >= winning_rounds_needed:
                 game_over = True
-                overall_winner_id = team_wins['winner_team_id']
+                overall_winner_id = row['winner_team_id']
                 break
-        
-        response_message = "Round finalized. Starting next round..."
-        
+
         if game_over:
-            # 5. Finalize the Game
-            update_game_query = "UPDATE game SET status = 'Completed' WHERE game_id = %s" # Winner ID determined by sp_TallyAndFinalizeGame
-            cursor.execute(update_game_query, (game_id,))
-            response_message = f"Game completed! Overall Winner: Team {overall_winner_id}. Please finalize game metrics."
+    # ✅ Mark game as completed (schema-safe)
+            cursor.execute(
+        "UPDATE game SET status = 'Completed' WHERE game_id = %s",
+        (game_id,)
+    )
+
+            conn.commit()
+            return jsonify({
+        "message": f"Match point reached! Team {overall_winner_id} wins the series. Please finalize game metrics.",
+        "game_over": True,
+        "next_round": None
+            }), 200
+
         else:
-            # 6. Prepare for Next Round
-            next_round_number = round_number + 1
-            insert_next_round = "INSERT INTO game_round (game_id, round_number, status) VALUES (%s, %s, 'Pending')"
-            cursor.execute(insert_next_round, (game_id, next_round_number))
-            
-        conn.commit()
-        return jsonify({
-            "message": response_message, 
-            "game_over": game_over, 
-            "next_round": round_number + 1 if not game_over else None
-        }), 200
+            # 6. Add next pending round
+            next_round = round_number + 1
+            cursor.execute("""
+                INSERT INTO game_round (game_id, round_number, status)
+                VALUES (%s, %s, 'Pending')
+            """, (game_id, next_round))
+
+            conn.commit()
+            return jsonify({
+                "message": "Round finalized. Starting next round...",
+                "game_over": False,
+                "next_round": next_round
+            }), 200
 
     except mysql.connector.Error as err:
         conn.rollback()
-        print(f"Round finalization error: {err}")
+        print("Finalize round error:", err)
         return jsonify({"error": "Failed to finalize round due to server error."}), 500
+
     finally:
-        if cursor: cursor.close()
-        if cursor_dict: cursor_dict.close()
-        if conn: conn.close()
+        cursor.close()
+        cursor_dict.close()
+        conn.close()
 
 
 @app.route('/api/games/<int:game_id>', methods=['DELETE'])
@@ -1351,7 +1353,7 @@ def log_round_event(game_id):
         if 'conn' in locals() and conn: conn.close()
 
 @app.route('/api/games/<int:game_id>/finalize', methods=['POST'])
-@role_required('Commissioner')
+@login_required
 def finalize_game(game_id):
     """Executes the stored procedure to finalize a game and tally stats."""
     conn = get_db_connection()

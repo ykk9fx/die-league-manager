@@ -1,17 +1,14 @@
-Die League - Fixed App
+HOW TO DEPLOY
 
-1) Create DB and load schema (XAMPP shell):
-   "C:\xampp\mysql\bin\mysql.exe" -h 127.0.0.1 -u root -e "CREATE DATABASE IF NOT EXISTS die_league_db CHARACTER SET utf8mb4;"
-   "C:\xampp\mysql\bin\mysql.exe" -h 127.0.0.1 -u root die_league_db < Milestone2.sql
-   "C:\xampp\mysql\bin\mysql.exe" -h 127.0.0.1 -u root die_league_db < security.sql
+1. Open XAMPP Control Panel and start Apache and MySQL (make sure it's set to port 3306)
 
-2) Python env (Command Prompt):
-   cd /d C:\path\to\die_league_app
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
+2. Next, open the shell in XAMPP and cd into the app directory example:
+   cd /d "C:\Users\cjbeb\Downloads\die_league_app"
 
-3) Configure .env then run:
+3. If the database has not been created, run:
+   python create_db.py
+
+4. Once it's been created, or if it already was, run the following to start the app
    python app.py
 
-4) Open http://127.0.0.1:5000/
+5. Then open http://127.0.0.1:5000/

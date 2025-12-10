@@ -1,0 +1,339 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title id="pageTitle">League Detail</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        /* General Layout */
+        main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+        .view-switcher button { padding: 10px 15px; margin-right: 5px; cursor: pointer; border: 1px solid #ccc; background: #f4f4f4; }
+        .view-switcher button.active { background: #007bff; color: white; border-color: #007bff; }
+        .view-content { border: 1px solid #ddd; padding: 20px; margin-top: 10px; min-height: 400px; }
+        .hidden { display: none; }
+        .error { color: red; font-weight: bold; }
+        .card { 
+            background: #fff; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            margin-bottom: 20px;
+        }
+        .team-card {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+        .input-row { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div id="nav"></div>
+
+    <main>
+        <h2 id="leagueHeader">Loading League...</h2>
+        <p>Status: <span id="leagueStatus"></span> | Season: <span id="leagueYear"></span></p>
+        <p>Your Role: <span id="userRole"></span> | <span id="userTeamInfo"></span></p>
+
+        <div class="view-switcher">
+            <button id="btnPlayers" data-view="players" class="active">Players/Roster</button>
+            <button id="btnTeams" data-view="teams">Teams</button>
+            <button id="btnStandings" data-view="standings">Standings</button>
+            <button id="btnStats" data-view="stats">Stats & Awards</button>
+            <button id="btnRecordGame" data-view="recordGame">Record Game</button>
+        </div>
+
+        <div class="view-content">
+            <div id="viewPlayers">Player Roster View Content (Loading...)</div>
+            
+            <div id="viewTeams" class="hidden">
+                <h3>Teams</h3>
+                
+                <div id="teamCreateSection" class="card" style="margin-bottom: 20px;">
+                    <h4>Create a New Team</h4>
+                    <div class="input-row">
+                        <div class="label">Team Name</div>
+                        <input id="newTeamName" type="text" placeholder="Example: The Blue Devils">
+                    </div>
+                    <button id="createTeamBtn">Create Team</button>
+                    <div id="createTeamOut" class="results"></div>
+                </div>
+                
+                <div id="teamsList" class="results">
+                    <em>Click the Teams tab to load data.</em>
+                </div>
+            </div>
+            
+            <div id="viewStandings" class="hidden">Standings View Content (To be built)</div>
+            <div id="viewStats" class="hidden">Stats/Awards View Content (To be built)</div>
+            <div id="viewRecordGame" class="hidden">Record Game View Content (To be built)</div>
+        </div>
+
+    </main>
+    
+    <script src="/static/js/api.js"></script>
+    <script>
+        // Store global league data once loaded
+        let LEAGUE_ID = null; 
+        let LEAGUE_DATA = {}; 
+
+        // --- Global Elements ---
+        const playersView = document.getElementById('viewPlayers');
+        const teamCreateSection = document.getElementById('teamCreateSection');
+        const teamsList = document.getElementById('teamsList');
+        const createTeamOut = document.getElementById('createTeamOut');
+        const newTeamNameInput = document.getElementById('newTeamName');
+        const createTeamBtn = document.getElementById('createTeamBtn');
+        const userTeamInfo = document.getElementById('userTeamInfo');
+
+
+        // --- Logout Handler (Required for dynamic navigation) ---
+        const handleLogout = async () => { 
+            try {
+                await API.post('/api/auth/logout'); 
+            } catch (e) {
+                console.error("Logout API failed, but proceeding with client logout:", e);
+            } finally {
+                window.location.href = '/'; 
+            }
+        };
+
+        const attachLogoutHandler = () => { 
+            const logoutButton = document.getElementById('logoutBtn');
+            if (logoutButton) {
+                logoutButton.addEventListener('click', handleLogout);
+            }
+        };
+
+        // --- View Switching Logic ---
+        const viewContents = document.querySelectorAll('.view-content > div');
+        document.querySelectorAll('.view-switcher button').forEach(button => {
+            button.onclick = async (e) => {
+                const viewId = e.target.dataset.view;
+                
+                // Toggle active class on buttons
+                document.querySelectorAll('.view-switcher button').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+
+                // Toggle visibility of content divs
+                viewContents.forEach(div => div.classList.add('hidden'));
+                document.getElementById(`view${viewId.charAt(0).toUpperCase() + viewId.slice(1)}`).classList.remove('hidden');
+
+                // Dynamically load data based on view
+                if (viewId === 'players') await loadPlayersView();
+                if (viewId === 'teams') await loadTeamsView();
+                // TODO: loadStandingsView, loadStatsView, loadRecordGameView
+            };
+        });
+
+        
+        // --- Roster Loading Function ---
+        const loadPlayersView = async () => {
+            playersView.innerHTML = "<em>Loading players...</em>";
+
+            if (!LEAGUE_ID) {
+                playersView.innerHTML = `<span class="error">Cannot load roster: League ID is missing.</span>`;
+                return;
+            }
+
+            try {
+                // This fetches all members with role 'Player' or 'Commissioner'
+                const roster = await API.get(`/api/league/${LEAGUE_ID}/roster`);
+                playersView.innerHTML = "<h4>Active Players</h4>";
+
+                if (roster.length === 0) {
+                    playersView.innerHTML += "<p>No players have joined this league yet.</p>";
+                    return;
+                }
+
+                const list = document.createElement('ul');
+                roster.forEach(p => {
+                    const item = document.createElement('li');
+                    item.textContent = `${p.first_name} ${p.last_name} (${p.email}) - Role: ${p.role}`;
+                    list.appendChild(item);
+                });
+                playersView.appendChild(list);
+
+            } catch (e) {
+                playersView.innerHTML = `<span class="error">Failed to load roster: ${e.message}</span>`;
+            }
+        };
+
+
+        // --- Team Joining Handler Attachment ---
+        const attachJoinTeamHandlers = () => {
+            document.querySelectorAll(".joinTeamBtn").forEach(btn => {
+                btn.onclick = async (e) => {
+                    const teamId = e.target.dataset.id;
+                    
+                    btn.disabled = true;
+                    btn.textContent = 'Joining...';
+                    
+                    try {
+                        const response = await API.post(`/api/team/${teamId}/join`);
+                        alert(response.message);
+                        
+                        await loadTeamsView(); // Reload view after success
+                        
+                    } catch (e) {
+                        btn.disabled = false;
+                        btn.textContent = 'Join Team';
+                        alert("Error joining team: " + e.message);
+                    }
+                };
+            });
+        };
+
+        // --- Team Creation Handler ---
+        const handleCreateTeam = async () => {
+            const teamName = newTeamNameInput.value.trim();
+            if (!teamName) {
+                createTeamOut.innerHTML = `<span class="error">Please enter a team name.</span>`;
+                return;
+            }
+            
+            createTeamOut.innerHTML = "<em>Creating team...</em>";
+            createTeamBtn.disabled = true;
+
+            try {
+                await API.post(`/api/league/${LEAGUE_ID}/teams`, { name: teamName });
+                
+                createTeamOut.innerHTML = `<span class="success">Team created successfully! Reloading view...</span>`;
+                newTeamNameInput.value = '';
+                
+                await loadTeamsView(); 
+
+            } catch (e) {
+                createTeamOut.innerHTML = `<span class="error">${e.message || 'Failed to create team.'}</span>`;
+            } finally {
+                createTeamBtn.disabled = false;
+            }
+        };
+        // Attach the handler to the button
+        createTeamBtn.onclick = handleCreateTeam;
+
+
+        // --- Teams View Loading Function ---
+        const loadTeamsView = async () => {
+    teamsList.innerHTML = "<em>Loading teams...</em>";
+    teamCreateSection.style.display = 'none'; 
+    createTeamOut.textContent = '';
+    
+    if (!LEAGUE_ID) {
+        teamsList.innerHTML = `<span class="error">Cannot load teams: League ID is missing.</span>`;
+        return;
+    }
+
+    try {
+        const response = await API.get(`/api/league/${LEAGUE_ID}/teams`);
+        const teams = response.teams;
+        const userTeamId = response.user_team_id;
+        
+        const MAX_SIZE = 2; // Maximum team size
+        
+        // 1. Determine user status
+        if (userTeamId) {
+            teamCreateSection.style.display = 'none';
+            userTeamInfo.innerHTML = `On Team: <strong>Team ID ${userTeamId}</strong>`;
+        } else {
+            teamCreateSection.style.display = 'block'; 
+            userTeamInfo.textContent = `Not on a team.`;
+        }
+
+        // 2. Render the list of teams
+        teamsList.innerHTML = `<h4>Current Teams (Max size: ${MAX_SIZE})</h4>`;
+        
+        if (teams.length === 0) {
+            teamsList.innerHTML += "<p>No teams have been created yet. Use the form above to create the first team.</p>";
+            return;
+        }
+
+        teams.forEach(t => {
+            const teamCard = document.createElement('div');
+            teamCard.className = 'card team-card';
+            
+            const isFull = t.current_size >= MAX_SIZE;
+            
+            // Generate HTML for team members
+            const memberNames = t.members.map(m => m.name).join(', ') || '— Empty —';
+
+            let buttonHtml = '';
+            if (userTeamId === null) {
+                if (isFull) {
+                    buttonHtml = '<button disabled style="background-color: #dc3545;">Team is Full</button>';
+                } else {
+                    buttonHtml = `<button class="joinTeamBtn" data-id="${t.team_id}">Join Team</button>`;
+                }
+            } else if (t.team_id === userTeamId) {
+                // User is on this team
+                buttonHtml = '<span style="color: green; font-weight: bold; float: right;">(Your Team)</span>';
+            }
+            
+            teamCard.innerHTML = `
+                <strong>${t.name}</strong> 
+                <span style="float: right;">Players: ${t.current_size}/${MAX_SIZE}</span><br>
+                Members: ${memberNames}<br>
+                ${buttonHtml}
+            `;
+            teamsList.appendChild(teamCard);
+        });
+        
+        attachJoinTeamHandlers(); 
+
+    } catch (e) {
+        teamsList.innerHTML = `<span class="error">Failed to load teams: ${e.message}</span>`;
+    }
+};
+
+        // --- Core Data Loading ---
+        const loadLeagueData = async () => {
+            const params = new URLSearchParams(window.location.search);
+            LEAGUE_ID = params.get('id');
+
+            if (!LEAGUE_ID) {
+                document.getElementById('leagueHeader').textContent = "Error: League ID missing.";
+                return;
+            }
+
+            try {
+                // Fetch league details (using the /details endpoint)
+                const data = await API.get(`/api/league/${LEAGUE_ID}/details`);
+                LEAGUE_DATA = data;
+                
+                // Update header information
+                document.getElementById('pageTitle').textContent = `League: ${data.league_name}`;
+                document.getElementById('leagueHeader').textContent = data.league_name;
+                document.getElementById('leagueStatus').textContent = data.status;
+                document.getElementById('leagueYear').textContent = data.season_year;
+                document.getElementById('userRole').textContent = data.user_role;
+                
+                // Display team status (will be updated by loadTeamsView if needed)
+                if (data.user_team_id) {
+                    userTeamInfo.innerHTML = `On Team: <strong>Team ID ${data.user_team_id}</strong>`; 
+                } else {
+                    userTeamInfo.textContent = `Not on a team.`;
+                }
+
+                // Initial view setup: Load players view
+                await loadPlayersView(); 
+                
+            } catch (e) {
+                document.getElementById('leagueHeader').innerHTML = `<span class="error">Error loading league: ${e.message}</span>`;
+            }
+        };
+        
+        // --- Navigation Loading ---
+        fetch('/api/nav_content')
+            .then(r => r.text())
+            .then(h => { 
+                document.getElementById('nav').innerHTML = h;
+                attachLogoutHandler();
+            });
+
+        // Run the main loader
+        document.addEventListener('DOMContentLoaded', loadLeagueData);
+
+    </script>
+</body>
+</html>

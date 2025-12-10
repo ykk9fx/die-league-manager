@@ -1,194 +1,335 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Leagues</title>
-  <link rel="stylesheet" href="/static/css/styles.css">
-  <style>
-    .input-row { margin-bottom: 6px; display: flex; gap: 10px; }
-    .label { font-size: 0.9em; color: #666; margin-bottom: 2px; }
-    .results { margin-top: 10px; }
-    .league-card {
-      padding: 12px;
-      border-radius: 8px;
-      background: #fafafa;
-      border: 1px solid #ddd;
-      margin-bottom: 10px;
-    }
-    .joinBtn {
-      margin-top: 6px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    .success { color: green; }
-    .error { color: red; }
-  </style>
+    <meta charset="utf-8">
+    <title>Leagues</title>
+    <link rel="stylesheet" href="/static/css/styles.css"> 
+    <style>
+        /* General Layout */
+        main { padding: 20px; max-width: 900px; margin: 0 auto; }
+        .card { 
+            background: #fff; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            margin-bottom: 20px;
+        }
+        
+        /* Form/Input Styles */
+        .input-row { margin-bottom: 6px; display: flex; gap: 10px; }
+        .label { font-size: 0.9em; color: #666; margin-bottom: 2px; }
+        input[type="text"], input[type="number"] { 
+            padding: 8px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            width: 100%;
+            box-sizing: border-box; /* Important for modal sizing */
+        }
+        button { 
+            padding: 8px 15px; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+        }
+        button:disabled { background-color: #aaa; }
+
+        /* Results Display */
+        .results { margin-top: 10px; }
+        .league-card {
+            padding: 12px;
+            border-radius: 8px;
+            background: #fafafa;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+        }
+        .joinBtn {
+            margin-top: 6px;
+            padding: 6px 10px;
+            cursor: pointer;
+            background-color: #28a745; /* Green for joining */
+        }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        
+        /* --- Modal Styles --- (New) */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            z-index: 100; 
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4); 
+            padding-top: 60px;
+        }
+        .modal.visible {
+            display: block;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto; /* 5% from the top and centered */
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 10px;
+            position: relative;
+        }
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-btn:hover, .close-btn:focus {
+            color: #000;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        /* --- End Modal Styles --- */
+    </style>
 </head>
 
 <body>
 <div id="nav"></div>
 
 <main>
-  <h2>My Leagues</h2>
-  <button id="loadMine">Load My Leagues</button>
-  <div id="mine" class="results"></div>
-
-  <section class="card">
-    <h3>Create a New League</h3>
-
-    <div class="label">League Name</div>
-    <input id="lname" placeholder="Example: Die League Champions">
-
-    <div class="label">Season Year</div>
-    <input id="lyear" placeholder="2025">
-
-    <button id="createBtn">Create League</button>
-    <div id="createOut"></div>
-  </section>
-
-  <section class="card">
-    <h3>Search for Leagues</h3>
-
-    <div class="label">Name Contains</div>
-    <input id="q" placeholder="Example: die">
-
-    <div class="label">Year</div>
-    <input id="year" placeholder="2025">
-
-    <button id="searchBtn">Search</button>
-
-    <div id="searchOut" class="results"></div>
-  </section>
+    <h2>My Leagues</h2>
+    <p>Leagues you are actively assigned a role in:</p>
+    <button id="loadMine">Refresh My Leagues</button>
+    <button id="showCreateModal">Create New League</button>
+    <button id="showSearchModal">Search Leagues</button>
+    
+    <div id="mine" class="results"></div>
 </main>
 
-<script>
-  fetch('/static/_nav.html')
-      .then(r => r.text())
-      .then(h => { document.getElementById('nav').innerHTML = h });
-</script>
+<div id="createModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" data-modal-id="createModal">&times;</span>
+        <h3>Create a New League</h3>
+
+        <div class="label">League Name</div>
+        <input id="lname" type="text" placeholder="Example: Die League Champions">
+
+        <div class="label">Season Year (YYYY)</div>
+        <input id="lyear" type="number" min="2000" max="2099" placeholder="2025">
+
+        <button id="createBtn">Create League</button>
+        <div id="createOut"></div>
+    </div>
+</div>
+
+<div id="searchModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" data-modal-id="searchModal">&times;</span>
+        <h3>Search for Leagues to Join</h3>
+
+        <div class="label">Name Contains</div>
+        <input id="q" type="text" placeholder="Example: die">
+
+        <div class="label">Year</div>
+        <input id="year" type="number" min="2000" max="2099" placeholder="2025">
+
+        <button id="searchBtn">Search</button>
+
+        <div id="searchOut" class="results"></div>
+    </div>
+</div>
+
 <script src="/static/js/api.js"></script>
 
 <script>
+    // --- Global Elements ---
+    const mineOut = document.getElementById("mine");
+    const createOut = document.getElementById("createOut");
+    const searchOut = document.getElementById("searchOut");
+    
+    // Modal Elements
+    const createModal = document.getElementById('createModal');
+    const searchModal = document.getElementById('searchModal');
+    const showCreateBtn = document.getElementById('showCreateModal');
+    const showSearchBtn = document.getElementById('showSearchModal');
+    
+    // Input Elements
+    const lname = document.getElementById("lname");
+    const lyear = document.getElementById("lyear");
+    const q = document.getElementById("q");
+    const year = document.getElementById("year");
+    
+    // --- Modal Logic ---
 
-// --- Extracted Function for Loading My Leagues ---
-const loadMyLeagues = async () => {
-    const r = await fetch('/api/league');
-    const leagues = await r.json();
+    const openModal = (modal) => {
+        modal.classList.add('visible');
+        modal.style.display = 'block';
+    };
 
-    const out = document.getElementById("mine");
-    out.innerHTML = "";
+    const closeModal = (modal) => {
+        modal.classList.remove('visible');
+        modal.style.display = 'none';
+    };
 
-    if (leagues.length === 0) {
-        out.textContent = "You are not in any leagues yet.";
-        return;
-    }
+    // Open Handlers
+    showCreateBtn.onclick = () => openModal(createModal);
+    showSearchBtn.onclick = () => openModal(searchModal);
 
-    leagues.forEach(l => {
-        const div = document.createElement("div");
-        div.className = "league-card";
-        // Optionally include the user's role here if available in the /api/league response
-        div.innerHTML = `
-            <strong>${l.name}</strong><br>
-            Season: ${l.season_year}<br>
-            League ID: ${l.league_id}
-        `;
-        out.appendChild(div);
-    });
-};
-// --- End Extracted Function ---
-
-
-// Load user's leagues (Initial setup)
-loadMine.onclick = loadMyLeagues;
-
-
-// Create league
-createBtn.onclick = async () => {
-    const name = lname.value.trim();
-    const year = lyear.value.trim();
-
-    if (!name || !year) {
-        createOut.innerHTML = `<span class="error">Please enter name and year.</span>`;
-        return;
-    }
-
-    try {
-        const resp = await API.post('/api/league', { name, season_year: year });
-        
-        createOut.innerHTML = `<span class="success">League created successfully! Redirecting...</span>`;
-        
-        // Refresh the 'My Leagues' list in the background
-        loadMyLeagues();
-        
-        // Redirect to the newly created league's details page
-        window.location.href = `/league.html?id=${resp.league_id}`;    
-    } catch (e) {
-        createOut.innerHTML = `<span class="error">${e.message}</span>`;
-    }
-};
-
-
-// Search leagues
-searchBtn.onclick = async () => {
-    const name = encodeURIComponent(q.value);
-    const yearVal = encodeURIComponent(year.value);
-
-    const r = await fetch(`/api/league/search?q=${name}&year=${yearVal}`);
-    const leagues = await r.json();
-
-    const out = document.getElementById("searchOut");
-    out.innerHTML = "";
-
-    if (leagues.length === 0) {
-        out.textContent = "No leagues found.";
-        return;
-    }
-
-    leagues.forEach(l => {
-        const div = document.createElement("div");
-        div.className = "league-card";
-
-        div.innerHTML = `
-            <strong>${l.name}</strong> <span style="color:#888">(Season ${l.season_year})</span><br>
-            League ID: ${l.league_id}<br>
-            <button class="joinBtn" data-id="${l.league_id}">Join League</button>
-        `;
-
-        out.appendChild(div);
+    // Close Handlers
+    document.querySelectorAll('.close-btn').forEach(btn => {
+        btn.onclick = (e) => closeModal(e.target.closest('.modal'));
     });
 
-    document.querySelectorAll(".joinBtn").forEach(btn => {
-        btn.onclick = async () => {
-            const leagueId = btn.dataset.id;
-            
-            // 1. Give visual feedback that the request is starting
-            btn.disabled = true;
-            btn.textContent = 'Joining...';
-            
-            try {
-                const resp = await API.post(`/api/league/${leagueId}/join`);
-                
-                // 2. SUCCESS: Show confirmation and then redirect
-                alert(resp.message);
+    window.onclick = (event) => {
+        if (event.target.classList.contains('modal')) {
+            closeModal(event.target);
+        }
+    };
+    
+    // --- Logout Handler ---
+    const handleLogout = async () => {
+        try {
+            await API.post('/api/auth/logout'); 
+        } catch (e) {
+            console.error("Logout API failed, but proceeding with client logout:", e);
+        } finally {
+            window.location.href = '/'; 
+        }
+    };
 
-                // No longer need this button, so remove it or update the card text
-                btn.remove(); 
-                
-                // Refresh the 'My Leagues' list in the background
-                loadMyLeagues();
-
-                // Redirect to the league detail page to join/create a team
-                window.location.href = `/league.html?id=${leagueId}`; 
-
-            } catch (e) {
-                // 3. ERROR: Show error and re-enable button
-                btn.disabled = false;
-                btn.textContent = 'Join League';
-                alert("Error: " + e.message);
+    const attachLogoutHandler = () => {
+        const logoutButton = document.getElementById('logoutBtn');
+        if (logoutButton) {
+            logoutButton.addEventListener('click', handleLogout);
+        }
+    };
+    
+    // --- Helper Function for List Refresh ---
+    const loadMyLeagues = async () => {
+        mineOut.innerHTML = "<em>Loading your leagues...</em>";
+        try {
+            const leagues = await API.get('/api/league'); 
+            mineOut.innerHTML = "";
+            if (leagues.length === 0) {
+                mineOut.textContent = "You are not in any leagues yet.";
+                return;
             }
-        };
-    });
-};
+
+            leagues.forEach(l => {
+                const div = document.createElement("div");
+                div.className = "league-card";
+                div.innerHTML = `
+                    <strong>${l.name}</strong> <span style="color:#007bff; font-size: 0.9em;">(Your Role: ${l.role})</span><br>
+                    Season: ${l.season_year}<br>
+                    League ID: ${l.league_id}<br>
+                    <a href="/league.html?id=${l.league_id}">View League Details</a>
+                `;
+                mineOut.appendChild(div);
+            });
+        } catch (e) {
+            mineOut.innerHTML = `<span class="error">Failed to load leagues. Session expired? Try logging in again. Error: ${e.message}</span>`;
+        }
+    };
+    // --- End Load Function ---
+
+
+    // --- Event Handlers ---
+
+    // 1. Load Navigation and Attach Logout Handler (CORRECTED FETCH)
+    fetch('/api/nav_content') // <--- FETCH FROM THE DYNAMIC ROUTE
+        .then(r => {
+            if (r.ok) return r.text();
+            throw new Error('Failed to load navigation');
+        })
+        .then(h => { 
+            document.getElementById('nav').innerHTML = h;
+            attachLogoutHandler(); // Attach after nav loads
+        })
+        .catch(e => console.error(e));
+        
+    // 2. Load Leagues on Page Load/Manual Refresh
+    document.getElementById("loadMine").onclick = loadMyLeagues;
+    // We attach loadMyLeagues to DOMContentLoaded, ensuring it runs after the page structure is ready
+    document.addEventListener('DOMContentLoaded', loadMyLeagues);
+
+    // 3. Create League Handler
+    document.getElementById("createBtn").onclick = async () => {
+        if (!lname.value.trim() || !lyear.value.trim()) {
+            createOut.innerHTML = `<span class="error">Please enter name and year.</span>`;
+            return;
+        }
+
+        try {
+            const resp = await API.post('/api/league', { name: lname.value.trim(), season_year: lyear.value.trim() });
+            
+            createOut.innerHTML = `<span class="success">${resp.message} Redirecting...</span>`;
+            
+            window.location.href = `/league.html?id=${resp.league_id}`;    
+        } catch (e) {
+            createOut.innerHTML = `<span class="error">${e.message}</span>`;
+        }
+    };
+
+
+    // 4. Search Leagues Handler
+    document.getElementById("searchBtn").onclick = async () => {
+        searchOut.innerHTML = "<em>Searching...</em>";
+        try {
+            const leagues = await API.get(`/api/league/search?q=${encodeURIComponent(q.value)}&year=${encodeURIComponent(year.value)}`);
+
+            searchOut.innerHTML = "";
+            if (leagues.length === 0) {
+                searchOut.textContent = "No leagues found matching your criteria.";
+                return;
+            }
+            
+            leagues.forEach(l => {
+                const div = document.createElement("div");
+                div.className = "league-card";
+
+                div.innerHTML = `
+                    <strong>${l.name}</strong> <span style="color:#888">(Season ${l.season_year})</span><br>
+                    Status: ${l.status}<br>
+                    <button class="joinBtn" data-id="${l.league_id}" data-name="${l.name}">Join League</button>
+                `;
+
+                searchOut.appendChild(div);
+            });
+
+            attachJoinHandlers();
+            // closeModal(searchModal); // Don't close modal yet, keep search results visible
+
+        } catch (e) {
+            searchOut.innerHTML = `<span class="error">Search failed: ${e.message}</span>`;
+        }
+    };
+
+
+    // 5. Join League Handler (Dynamically attached after search results load)
+    const attachJoinHandlers = () => {
+        document.querySelectorAll("#searchOut .joinBtn").forEach(btn => {
+            btn.onclick = async () => {
+                const leagueId = btn.dataset.id;
+                const leagueName = btn.dataset.name;
+                
+                btn.disabled = true;
+                btn.textContent = 'Joining...';
+                
+                try {
+                    await API.post(`/api/league/${leagueId}/join`);
+                    
+                    alert(`Successfully joined ${leagueName} as a Player!`);
+                    
+                    window.location.href = `/league.html?id=${leagueId}`; 
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.textContent = 'Join League';
+                    alert("Error joining league: " + e.message);
+                }
+            };
+        });
+    };
 </script>
 </body>
 </html>

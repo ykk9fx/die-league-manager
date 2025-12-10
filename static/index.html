@@ -1,46 +1,63 @@
-<!doctype html>
-<html><head><meta charset="utf-8"><title>Die League</title>
-<link rel="stylesheet" href="/css/styles.css"></head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>League Manager Auth</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f4f4; }
+        .auth-container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px; }
+        h2 { text-align: center; color: #333; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px;}
+        button:hover { background-color: #0056b3; }
+        #message { margin-top: 15px; text-align: center; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .hidden { display: none; }
+    </style>
+</head>
 <body>
-<div id="nav"></div>
-<main>
-  <h1>Die League</h1>
-  <p class="muted">Register or login, then use the nav.</p>
-  <section class="card">
-    <h3>API/DB Status</h3>
-    <button id="ping">Check</button>
-    <pre id="pingOut"></pre>
-  </section>
+    <div class="auth-container">
+        <div id="message" class="hidden"></div>
+        
+        <div id="loginView">
+            <h2>Log In</h2>
+            <form id="loginForm">
+                <label for="login-email">Email</label>
+                <input type="email" id="login-email" required>
 
-  <section class="card">
-    <h3>Register</h3>
-    <input id="r_name" placeholder="Full name">
-    <input id="r_email" placeholder="email">
-    <input id="r_pw" type="password" placeholder="password">
-    <button id="r_btn">Register</button>
-    <pre id="r_out"></pre>
-  </section>
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" required>
 
-  <section class="card">
-    <h3>Login</h3>
-    <input id="l_email" placeholder="email">
-    <input id="l_pw" type="password" placeholder="password">
-    <button id="l_btn">Login</button>
-    <pre id="l_out"></pre>
-  </section>
-</main>
-<script>fetch('/static/_nav.html').then(r=>r.text()).then(h=>{document.getElementById('nav').innerHTML=h});</script>
-<script src="/js/api.js"></script>
-<script>
-ping.onclick = async ()=>{ const r=await fetch('/api/status'); pingOut.textContent=await r.text(); };
-r_btn.onclick = async ()=>{
-  try{ r_out.textContent = JSON.stringify(await API.post('/api/auth/register',{name:r_name.value,email:r_email.value,password:r_pw.value}),null,2); }
-  catch(e){ r_out.textContent = e.message; }
-};
-l_btn.onclick = async ()=>{
-  try{ l_out.textContent = JSON.stringify(await API.post('/api/auth/login',{email:l_email.value,password:l_pw.value}),null,2);
-       location.href='leagues.html'; }
-  catch(e){ l_out.textContent = e.message; }
-};
-</script>
-</body></html>
+                <button type="submit">Log In</button>
+            </form>
+            <p style="text-align: center;">
+                <a href="#" id="showRegister">Need an account? Register.</a>
+            </p>
+        </div>
+
+        <div id="registerView" class="hidden">
+            <h2>Register New Account</h2>
+            <form id="registerForm">
+                <label for="reg-name">Full Name</label>
+                <input type="text" id="reg-name" required placeholder="e.g., Alex Smith">
+
+                <label for="reg-email">Email</label>
+                <input type="email" id="reg-email" required>
+
+                <label for="reg-password">Password</label>
+                <input type="password" id="reg-password" required>
+
+                <button type="submit">Register</button>
+            </form>
+            <p style="text-align: center;">
+                <a href="#" id="showLogin">Already have an account? Log In.</a>
+            </p>
+        </div>
+    </div>
+<script src="/static/js/api.js"></script>
+    <script src="/static/js/login.js"></script>
+</body>
+</html>

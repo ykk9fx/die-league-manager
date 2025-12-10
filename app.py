@@ -1089,6 +1089,37 @@ def delete_player(player_id):
 # NOTE: The below endpoints are included for completeness but will need auditing
 # for consistency with the new lowercase snake_case table names (Game->game, Team->team, etc.)
 
+@app.route('/api/league/<int:league_id>/standings')
+@login_required
+def league_standings(league_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT
+            t.team_id,
+            t.team_name,
+            COALESCE(MAX(CASE WHEN psm.category_code = 'PLAYER_WINS' THEN psm.metric_value END), 0) AS wins,
+            COALESCE(MAX(CASE WHEN psm.category_code = 'PLAYER_LOSSES' THEN psm.metric_value END), 0) AS losses
+        FROM team t
+        JOIN team_membership tm ON t.team_id = tm.team_id AND tm.active = 1
+        LEFT JOIN player_season_metric psm
+            ON tm.player_id = psm.player_id
+           AND psm.league_id = t.league_id
+           AND psm.category_code IN ('PLAYER_WINS', 'PLAYER_LOSSES')
+        WHERE t.league_id = %s
+        GROUP BY t.team_id, t.team_name
+        ORDER BY wins DESC, losses ASC
+    """, (league_id,))
+
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
+
+
 @app.route('/api/games', methods=['GET'])
 @login_required
 def get_games():
@@ -1157,6 +1188,70 @@ def get_games():
         cursor.close()
         conn.close()
 
+
+@app.route('/api/league/<int:league_id>/stats')
+@login_required
+def league_stats(league_id):
+    category = request.args.get('category')
+    sort = request.args.get('sort', 'metric')
+    order = request.args.get('order', 'desc')
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+        SELECT
+            CONCAT(p.first_name, ' ', p.last_name) AS player_name,
+            t.team_name,
+            c.display_name AS category_name,
+            psm.category_code,
+            psm.metric_value
+        FROM player_season_metric psm
+        JOIN player p ON p.player_id = psm.player_id
+        JOIN season_stat_category c ON c.category_code = psm.category_code
+        LEFT JOIN team_membership tm ON tm.player_id = p.player_id AND tm.active = 1
+        LEFT JOIN team t ON t.team_id = tm.team_id
+        WHERE psm.league_id = %s
+    """
+
+    params = [league_id]
+
+    if category:
+        query += " AND psm.category_code = %s"
+        params.append(category)
+
+    if sort == 'player':
+        query += " ORDER BY player_name"
+    else:
+        query += " ORDER BY psm.metric_value"
+
+    query += " DESC" if order == 'desc' else " ASC"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
+@app.route('/api/stats/categories')
+@login_required
+def stat_categories():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT category_code, display_name
+        FROM season_stat_category
+        ORDER BY display_name
+    """)
+
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
 # C:\projects\league-manager-api\app.py (REPLACE def create_game)
 
 # C:\projects\league-manager-api\app.py (REPLACE def create_game)
@@ -1165,68 +1260,132 @@ def get_games():
 @login_required
 def create_game():
     """
-    Schedules a new game. Requires the logged-in user to be a MEMBER of the league,
-    and handles the "Best of N" match length setting.
+    Schedules a new game.
+    RULES:
+    - Teams must be different
+    - Teams must belong to league
+    - Teams must have at least 2 active players
+    - User scheduling the game CANNOT be on either team
     """
     data = request.get_json()
+
     league_id = data.get('league_id')
     home_team = data.get('home_team')
     away_team = data.get('away_team')
-    scheduled_at = data.get('scheduled_at')
-
-    # NEW: Get round_best_of value, defaulting to 1 (or 3, matching frontend selection)
     round_best_of = data.get('round_best_of', 3)
-
-    if not scheduled_at:
-        scheduled_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if round_best_of not in (1, 3, 5):
+        return jsonify({
+        "error": "round_best_of must be 1, 3, or 5."
+    }), 400
 
     user_id = session.get('user_id')
 
-    if not all([league_id, home_team, away_team, user_id]):
-        return jsonify({"error": "Missing required data"}), 400
+    if not all([league_id, home_team, away_team]):
+        return jsonify({"error": "Missing required fields."}), 400
+
     if home_team == away_team:
-        return jsonify({"error": "Home and away teams must be different"}), 400
+        return jsonify({"error": "Home and Away teams must be different."}), 400
 
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
 
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
+
     try:
-        # 1. CHECK MEMBERSHIP
-        membership_check_query = "SELECT COUNT(*) FROM role_assignment WHERE user_id = %s AND league_id = %s"
-        cursor.execute(membership_check_query, (user_id, league_id))
-        if cursor.fetchone()[0] == 0:
-            return jsonify({"error": "You must be a member of this league to schedule a game."}), 403
+        # 1. Resolve player_id for logged-in user
+        cursor.execute("""
+            SELECT p.player_id
+            FROM player p
+            JOIN user_account u ON u.email = p.email
+            WHERE u.user_id = %s
+        """, (user_id,))
 
-        # 2. Team check
-        team_check_query = "SELECT COUNT(team_id) FROM team WHERE team_id IN (%s, %s) AND league_id = %s"
-        cursor.execute(team_check_query, (home_team, away_team, league_id))
-        if cursor.fetchone()[0] != 2:
-            return jsonify({"error": "Teams must belong to the specified league."}), 403
+        player_row = cursor.fetchone()
+        if not player_row:
+            return jsonify({"error": "Logged-in user is not associated with a player."}), 403
 
-        # 3. Insert into game
-        game_query = """
-            INSERT INTO game (league_id, status, scheduled_at, home_team, away_team, round_best_of)
-            VALUES (%s, 'Scheduled', %s, %s, %s, %s)
-        """
-        cursor.execute(game_query, (league_id, scheduled_at, home_team, away_team, round_best_of))
+        player_id = player_row['player_id']
+
+        # 2. Ensure user is NOT on either team
+        cursor.execute("""
+            SELECT team_id
+            FROM team_membership
+            WHERE player_id = %s
+              AND team_id IN (%s, %s)
+              AND active = 1
+        """, (player_id, home_team, away_team))
+
+        if cursor.fetchone():
+            return jsonify({
+                "error": "You cannot schedule a game involving your own team."
+            }), 403
+
+        # 3. Verify both teams belong to the league
+        cursor.execute("""
+            SELECT team_id
+            FROM team
+            WHERE league_id = %s AND team_id IN (%s, %s)
+        """, (league_id, home_team, away_team))
+
+        valid_teams = {row['team_id'] for row in cursor.fetchall()}
+
+        if home_team not in valid_teams or away_team not in valid_teams:
+            return jsonify({"error": "One or both teams do not belong to this league."}), 400
+
+        # 4. Enforce minimum player count (>= 2 active players per team)
+        cursor.execute("""
+            SELECT team_id, COUNT(*) AS player_count
+            FROM team_membership
+            WHERE team_id IN (%s, %s)
+              AND active = 1
+            GROUP BY team_id
+        """, (home_team, away_team))
+
+        counts = {row['team_id']: row['player_count'] for row in cursor.fetchall()}
+
+        if counts.get(home_team, 0) < 2 or counts.get(away_team, 0) < 2:
+            return jsonify({
+                "error": "Both teams must have at least 2 active players to record a game."
+            }), 400
+
+        # 5. Create the game
+        cursor.execute("""
+            INSERT INTO game (
+                league_id,
+                status,
+                scheduled_at,
+                home_team,
+                away_team,
+                round_best_of
+            )
+            VALUES (%s, 'Scheduled', NOW(), %s, %s, %s)
+        """, (league_id, home_team, away_team, round_best_of))
+
         game_id = cursor.lastrowid
 
-        # 4. Insert initial game round
-        round_query = "INSERT INTO game_round (game_id, round_number, status) VALUES (%s, 1, 'Pending')"
-        cursor.execute(round_query, (game_id,))
+        # 6. Create Round 1
+        cursor.execute("""
+            INSERT INTO game_round (game_id, round_number, status)
+            VALUES (%s, 1, 'Pending')
+        """, (game_id,))
 
         conn.commit()
-        return jsonify({"message": "Game scheduled successfully", "game_id": game_id}), 201
+
+        return jsonify({
+            "message": "Game scheduled successfully.",
+            "game_id": game_id
+        }), 201
 
     except mysql.connector.Error as err:
         conn.rollback()
-        print(f"Game creation error: {err}")
-        return jsonify({"error": "Game creation failed"}), 500
+        print("Create game error:", err)
+        return jsonify({"error": "Failed to schedule game."}), 500
+
     finally:
-        if 'cursor' in locals() and cursor: cursor.close()
-        if 'conn' in locals() and conn: conn.close()
+        cursor.close()
+        conn.close()
+
 
 @app.route('/api/game/<int:game_id>/round/finalize', methods=['POST'])
 @login_required
@@ -1381,71 +1540,122 @@ def log_round_event(game_id):
     """Logs a single event to a game round."""
     data = request.get_json()
 
-    # Mandatory fields received from frontend
     round_number = data.get('round_number')
     sequence_number = data.get('sequence_number')
     player_id = data.get('player_id')
     event_type = data.get('event_type')
 
-    # Optional/Derivable fields
-    player_lp_delta = data.get('player_lp_delta', 0)
     opponent_player_id = data.get('opponent_player_id')
-    opponent_team_id = data.get('opponent_team_id')
 
-    # Initialize variables to prevent UnboundLocalError
-    player_team_id = None
-
-    # --- 1. Validate Mandatory Fields (Excluding team_id, which the server finds) ---
     if not all([round_number, sequence_number, player_id, event_type]):
-        return jsonify({"error": "Missing critical event data: round, sequence, player, or type"}), 400
+        return jsonify({"error": "Missing critical event data."}), 400
 
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
 
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
+
     try:
-        # 2. Get the player's team ID (mandatory for logging the event)
-        # FIX: Ensure team is found before proceeding.
-        team_q = "SELECT team_id FROM team_membership WHERE player_id = %s AND active = TRUE"
-        cursor.execute(team_q, (player_id,))
-        player_team_row = cursor.fetchone()
+        # 1. Resolve shooter team
+        cursor.execute("""
+            SELECT team_id
+            FROM team_membership
+            WHERE player_id = %s AND active = TRUE
+        """, (player_id,))
+        shooter_row = cursor.fetchone()
 
-        if not player_team_row:
-            return jsonify({"error": f"Player ID {player_id} is not on an active team."}), 404
+        if not shooter_row:
+            return jsonify({"error": "Shooter is not on an active team."}), 404
 
-        player_team_id = player_team_row[0]
+        player_team_id = shooter_row['team_id']
 
-        # 3. Log the event
-        event_query = """
+        opponent_team_id = None
+
+        # 2. Resolve opponent team (if provided)
+        if opponent_player_id:
+            cursor.execute("""
+                SELECT team_id
+                FROM team_membership
+                WHERE player_id = %s AND active = TRUE
+            """, (opponent_player_id,))
+            opp_row = cursor.fetchone()
+
+            if not opp_row:
+                return jsonify({"error": "Opponent is not on an active team."}), 404
+
+            opponent_team_id = opp_row['team_id']
+
+            # ✅ HARD RULE: players cannot be on same team
+            if opponent_team_id == player_team_id:
+                return jsonify({
+                    "error": "Shooter and opponent cannot be on the same team."
+                }), 400
+
+        # 3. Determine LP delta (server authoritative)
+        player_lp_delta = 0
+
+        if event_type == 'KICK':
+            if not opponent_player_id:
+                return jsonify({"error": "Kick events require an opponent player."}), 400
+
+            player_lp_delta = -1
+
+        elif event_type == 'SELF_FIELD_GOAL':
+            player_lp_delta = -1
+
+        elif event_type in ('HIT_DROP', 'PLINK_CATCH', 'PLINK_TABLE'):
+            player_lp_delta = 1
+
+        elif event_type == 'PLINK_DROP':
+            player_lp_delta = 2
+
+        elif event_type in ('MISS', 'HIT_CATCH'):
+            player_lp_delta = 0
+
+        elif event_type == 'PLUNK':
+            player_lp_delta = 0  # Round ending handled elsewhere
+
+        # 4. Insert event
+        cursor.execute("""
             INSERT INTO round_event (
-                game_id, round_number, sequence_number, player_team_id, player_id,
-                opponent_team_id, opponent_player_id, event_type, player_lp_delta
+                game_id,
+                round_number,
+                sequence_number,
+                player_team_id,
+                player_id,
+                opponent_team_id,
+                opponent_player_id,
+                event_type,
+                player_lp_delta
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        # NOTE: We use the server-found player_team_id, and set opponent_lp_delta to 0
-        # (as it's derived by the scoring engine, not client-sent).
-        # Removed opponent_lp_delta from the INSERT query and the VALUES tuple
-        # to match the 9 values in the VALUES clause.
-
-        cursor.execute(event_query, (
-            game_id, round_number, sequence_number, player_team_id, player_id,
-            opponent_team_id, opponent_player_id, event_type, player_lp_delta
+        """, (
+            game_id,
+            round_number,
+            sequence_number,
+            player_team_id,
+            player_id,
+            opponent_team_id,
+            opponent_player_id,
+            event_type,
+            player_lp_delta
         ))
-        conn.commit()
 
-        return jsonify({"message": f"Event {event_type} logged successfully"}), 201
+        conn.commit()
+        return jsonify({"message": f"Event '{event_type}' logged successfully."}), 201
 
     except mysql.connector.Error as err:
         conn.rollback()
         if err.errno == 1062:
             return jsonify({"error": "Sequence number already exists for this round."}), 409
-        print(f"Event logging error: {err}")
-        return jsonify({"error": "Event logging failed"}), 500
+        print("Event logging error:", err)
+        return jsonify({"error": "Failed to log event."}), 500
+
     finally:
-        if 'cursor' in locals() and cursor: cursor.close()
-        if 'conn' in locals() and conn: conn.close()
+        cursor.close()
+        conn.close()
+
 
 @app.route('/api/games/<int:game_id>/finalize', methods=['POST'])
 @login_required
@@ -1522,7 +1732,7 @@ def calculate_round_score(events, home_team_id, away_team_id):
             # Example: Opponent 4. Winner needs 6. Score becomes 6-4.
             # Example: Opponent 7. Winner needs 9. Score becomes 9-7.
 
-            winning_score_target = max(6, opponent_score + 2)
+            winning_score_target = max(7, opponent_score + 2)
             score[player_score_key] = winning_score_target
             round_over = True
             winner_team_id = player_team

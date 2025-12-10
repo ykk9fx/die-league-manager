@@ -225,7 +225,6 @@ BEGIN
             WHEN event_type LIKE 'HIT%' THEN 'HITS'
             WHEN event_type = 'MISS' THEN 'MISSES'
             WHEN event_type = 'PLUNK' THEN 'PLUNKS'
-            WHEN event_type = 'KICK' THEN 'KICKS'
             WHEN event_type = 'SELF_FIELD_GOAL' THEN 'SELF_FG'
             ELSE NULL
         END AS stat_category,
@@ -244,6 +243,7 @@ BEGIN
         v_season_year,
         opponent_player_id AS player_id,
         CASE
+            WHEN event_type = 'KICK' THEN 'KICKS'
             WHEN event_type LIKE '%_DROP' THEN 'DROPS'
             WHEN event_type LIKE '%_CATCH' THEN 'CATCHES'
             ELSE NULL

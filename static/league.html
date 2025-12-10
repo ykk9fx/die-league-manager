@@ -181,8 +181,8 @@
             if (viewId === 'players') await loadPlayersView();
             if (viewId === 'teams') await loadTeamsView();
             if (viewId === 'recordGame') await loadRecordGameView();
-            if (viewId === 'stats') await loadStatsView(); 
-            // TODO: loadStandingsView
+            if (viewId === 'stats') await loadStatsView();
+            if (viewId === 'standings') await loadStandingsView();
         };
     });
 
@@ -525,51 +525,58 @@
     };
     
     const handleScheduleGame = async () => {
-        // Note: Selectors are guaranteed to exist here due to loadRecordGameView structure
-        const home_team = document.getElementById('homeTeamSelect').value;
-        const away_team = document.getElementById('awayTeamSelect').value;
-        const gameRecordOutLocal = document.getElementById('gameRecordOut');
-        const scheduleGameBtnLocal = document.getElementById('scheduleGameBtn');
-        
-        if (gameRecordOutLocal) gameRecordOutLocal.textContent = '';
-        
-        if (!home_team || !away_team || home_team === '0' || away_team === '0') {
-            gameRecordOutLocal.innerHTML = '<span class="error">Please select both teams.</span>';
-            return;
-        }
-        if (home_team === away_team) {
-            gameRecordOutLocal.innerHTML = '<span class="error">Home and Away teams must be different.</span>';
-            return;
-        }
+    const selectHome = document.getElementById('homeTeamSelect');
+    const selectAway = document.getElementById('awayTeamSelect');
+    const bestOfSelect = document.getElementById('roundBestOfSelect');
 
-        if (scheduleGameBtnLocal) scheduleGameBtnLocal.disabled = true;
-        gameRecordOutLocal.innerHTML = '<em>Scheduling game...</em>';
+    const gameRecordOutLocal = document.getElementById('gameRecordOut');
+    const scheduleGameBtnLocal = document.getElementById('scheduleGameBtn');
 
-        try {
-            const payload = {
-                league_id: LEAGUE_DATA.league_id, // Use the league ID from the loaded data
-                home_team: parseInt(home_team),
-                away_team: parseInt(away_team),
-                // NOTE: round_best_of defaults to 3 on the backend for now
-            };
-            
-            const resp = await API.post('/api/games', payload); 
-            
-            gameRecordOutLocal.innerHTML = `<span class="success">${resp.message} (ID: ${resp.game_id}). Loading scoring interface...</span>`;
-            
-            // NOTE: The backend needs the game ID for subsequent event logging, 
-            // so we temporarily set LEAGUE_ID (which is used as gameId in the scoring handlers)
-            LEAGUE_ID = resp.game_id;
-            await loadGameState(resp.game_id);
+    const home_team = selectHome.value;
+    const away_team = selectAway.value;
 
-        } catch (e) {
-            gameRecordOutLocal.innerHTML = `<span class="error">${e.message || 'Failed to schedule game.'}</span>`;
-        } finally {
-            if (scheduleGameBtnLocal) {
-                scheduleGameBtnLocal.disabled = false;
-            }
-        }
-    };
+    gameRecordOutLocal.textContent = '';
+
+    if (!home_team || !away_team || home_team === '0' || away_team === '0') {
+        gameRecordOutLocal.innerHTML =
+            '<span class="error">Please select both teams.</span>';
+        return;
+    }
+
+    if (home_team === away_team) {
+        gameRecordOutLocal.innerHTML =
+            '<span class="error">Home and Away teams must be different.</span>';
+        return;
+    }
+
+    const roundBestOf = parseInt(bestOfSelect.value); // ✅ READ IT HERE
+
+    scheduleGameBtnLocal.disabled = true;
+    gameRecordOutLocal.innerHTML = '<em>Scheduling game...</em>';
+
+    try {
+        const payload = {
+            league_id: LEAGUE_DATA.league_id,
+            home_team: parseInt(home_team),
+            away_team: parseInt(away_team),
+            round_best_of: roundBestOf   // ✅ SEND IT
+        };
+
+        const resp = await API.post('/api/games', payload);
+
+        gameRecordOutLocal.innerHTML =
+            `<span class="success">${resp.message} (ID: ${resp.game_id})</span>`;
+
+        await loadGameState(resp.game_id);
+
+    } catch (e) {
+        gameRecordOutLocal.innerHTML =
+            `<span class="error">${e.message}</span>`;
+    } finally {
+        scheduleGameBtnLocal.disabled = false;
+    }
+};
+
 
     // --- New Game State Loader Function (Initializes scoring UI) ---
     const loadGameState = async (gameId) => {
@@ -738,9 +745,27 @@
         recordView.innerHTML = `
             <h3>Schedule & Record New Game</h3>
             <div class="card">
-                <div class="input-row"><div class="label">Home Team</div><select id="homeTeamSelect"></select></div>
-                <div class="input-row"><div class="label">Away Team</div><select id="awayTeamSelect"></select></div>
-                <button id="scheduleGameBtn">Schedule & Record Game</button>
+                <div class="input-row">
+    <div class="label">Home Team</div>
+    <select id="homeTeamSelect"></select>
+</div>
+
+<div class="input-row">
+    <div class="label">Away Team</div>
+    <select id="awayTeamSelect"></select>
+</div>
+
+<div class="input-row">
+    <div class="label">Match Format</div>
+    <select id="roundBestOfSelect">
+        <option value="1">Best of 1</option>
+        <option value="3" selected>Best of 3</option>
+        <option value="5">Best of 5</option>
+    </select>
+</div>
+
+<button id="scheduleGameBtn">Schedule & Record Game</button>
+
                 <div id="gameRecordOut" class="results"></div>
             </div>
         `;
@@ -760,7 +785,15 @@
             const response = await API.get(`/api/league/${LEAGUE_DATA.league_id}/teams`);
             const teams = response.teams || [];
 
-            const optionsHtml = teams.map(t => `<option value="${t.team_id}">${t.name} (ID: ${t.team_id})</option>`).join('');
+            const optionsHtml = teams.map(t => {
+    const disabled = t.current_size < 2 ? 'disabled' : '';
+    const warning = t.current_size < 2 ? ' Needs 2 players' : '';
+    return `
+        <option value="${t.team_id}" ${disabled}>
+            ${t.name} (${t.current_size}/2)${warning}
+        </option>
+    `;
+}).join('');
             
             const defaultOption = '<option value="0" disabled selected>-- Select Team --</option>';
             
@@ -776,40 +809,114 @@
     
     // --- Stats View Loading Function (NEW) ---
     const loadStatsView = async () => {
-        const statsView = document.getElementById('viewStats');
-        if (!statsView) return;
-        statsView.innerHTML = "<em>Loading league statistics...</em>";
+    const view = document.getElementById('viewStats');
 
-        if (!LEAGUE_DATA.league_id) {
-            statsView.innerHTML = `<span class="error">Cannot load stats: League ID is missing.</span>`;
-            return;
-        }
+    view.innerHTML = `
+      <div class="card">
+        <select id="statCategory"></select>
+        <select id="sortBy">
+          <option value="metric">Stat Value</option>
+          <option value="player">Player Name</option>
+        </select>
+        <select id="sortOrder">
+          <option value="desc">Desc</option>
+          <option value="asc">Asc</option>
+        </select>
+        <button id="applyStatsFilter">Apply</button>
+      </div>
+      <div id="statsTable"><em>Loading…</em></div>
+    `;
 
-        try {
-            // Fetch stats, filtered by league_id
-            const stats = await API.get(`/api/stats?league_id=${LEAGUE_DATA.league_id}`);
-            
-            let html = '<h4>Player Season Statistics (League)</h4>';
+    const categories = await API.get('/api/stats/categories');
+    const catSelect = document.getElementById('statCategory');
 
-            if (!Array.isArray(stats) || stats.length === 0) {
-                html += '<p>No game results recorded yet to calculate statistics.</p>';
-                statsView.innerHTML = html;
-                return;
-            }
+    catSelect.innerHTML =
+        `<option value="">All Categories</option>` +
+        categories.map(c =>
+            `<option value="${c.category_code}">${c.display_name}</option>`
+        ).join('');
 
-            // Simple table structure for demonstration
-            html += '<table><thead><tr><th>Player</th><th>Category</th><th>Value</th></tr></thead><tbody>';
-            stats.forEach(s => {
-                html += `<tr><td>${s.player_name}</td><td>${s.category_name} (${s.category_code})</td><td>${s.metric_value}</td></tr>`;
-            });
-            html += '</tbody></table>';
+    document.getElementById('applyStatsFilter').onclick = fetchStats;
+    await fetchStats();
+};
 
-            statsView.innerHTML = html;
 
-        } catch (e) {
-            statsView.innerHTML = `<span class="error">Failed to load statistics: ${e.message}</span>`;
-        }
-    };
+const fetchStats = async () => {
+    const category = document.getElementById('statCategory').value;
+    const sort = document.getElementById('sortBy').value;
+    const order = document.getElementById('sortOrder').value;
+
+    let url = `/api/league/${LEAGUE_DATA.league_id}/stats?sort=${sort}&order=${order}`;
+    if (category) url += `&category=${category}`;
+
+    const data = await API.get(url);
+
+    let html = `
+      <table>
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Team</th>
+            <th>Stat</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    data.forEach(r => {
+        html += `
+          <tr>
+            <td>${r.player_name}</td>
+            <td>${r.team_name || '-'}</td>
+            <td>${r.category_name}</td>
+            <td><strong>${r.metric_value}</strong></td>
+          </tr>
+        `;
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('statsTable').innerHTML = html;
+};
+
+    const loadStandingsView = async () => {
+    const el = document.getElementById('viewStandings');
+    el.innerHTML = '<em>Loading standings...</em>';
+
+    try {
+        const data = await API.get(`/api/league/${LEAGUE_DATA.league_id}/standings`);
+
+        let html = `
+            <h3>Team Standings</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Team</th>
+                        <th>Wins</th>
+                        <th>Losses</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        data.forEach(t => {
+            html += `
+                <tr>
+                    <td>${t.team_name}</td>
+                    <td>${t.wins}</td>
+                    <td>${t.losses}</td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        el.innerHTML = html;
+
+    } catch (e) {
+        el.innerHTML = `<span class="error">${e.message}</span>`;
+    }
+};
+
 
     // --- Initial Handler Attachment Function ---
     // Attaches handlers to elements that exist on initial page load (like the Create Team button).

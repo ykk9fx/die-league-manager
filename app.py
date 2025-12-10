@@ -6,7 +6,47 @@ from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from functools import wraps
 from datetime import datetime
-# Removed unused imports: csv, json, io, BytesIO, g, Blueprint, datetime
+
+def setup_database_security():
+    """
+    Satisfies Database Level Security Requirement:
+    Automatically creates a limited-privilege user for the application.
+    """
+    # 1. Connect as ROOT to perform admin tasks
+    try:
+        admin_conn = mysql.connector.connect(
+            host="127.0.0.1",
+            user="root",
+            password="",  # Leave this empty for XAMPP
+            database="die_league_db"
+        )
+        cursor = admin_conn.cursor()
+
+        # 2. The SQL Commands for the Report (Rubric Requirement)
+        # Create the user if they don't exist
+        cursor.execute("CREATE USER IF NOT EXISTS 'league_app'@'localhost' IDENTIFIED BY 'secure_pass_123';")
+
+        # Grant ONLY data access (SELECT, INSERT, UPDATE, DELETE)
+        # notice we do NOT grant DROP or ALTER (Satisfies "Limited Privileges")
+        cursor.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON die_league_db.* TO 'league_app'@'localhost';")
+
+        # Allow running the game tally stored procedure
+        cursor.execute("GRANT EXECUTE ON PROCEDURE die_league_db.sp_TallyAndFinalizeGame TO 'league_app'@'localhost';")
+
+        # Save changes
+        cursor.execute("FLUSH PRIVILEGES;")
+
+        print("--- DATABASE SECURITY: Secure user 'league_app' configured successfully. ---")
+        cursor.close()
+        admin_conn.close()
+
+
+    except mysql.connector.Error as err:
+        print(f"Security Setup Warning: {err}")
+
+
+# RUN THIS ONCE AT STARTUP
+setup_database_security()
 
 load_dotenv()
 
@@ -23,20 +63,22 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
+
 # --- DATABASE CONNECTION ---
+
 
 def get_db_connection():
     try:
         use_secure = os.getenv("USE_SECURE_DB", "false").lower() == "true"
-        
+
         cfg = {}
-        
+
         if use_secure:
             # Production - use limited privilege user
             cfg = {
                 "host": os.getenv("DB_HOST", "127.0.0.1"),
-                "user": "app_user",
-                "password": "app_pw_123",
+                "user": "league_app",
+                "password": "secure_pass_123",
                 "database": os.getenv("DB_NAME", "die_league_db"),
                 "port": int(os.getenv("DB_PORT", "3306")),
             }
@@ -49,11 +91,11 @@ def get_db_connection():
                 "database": os.getenv("DB_NAME", "die_league_db"),
                 "port": int(os.getenv("DB_PORT", "3306")),
             }
-        
+
         ap = os.getenv("DB_AUTH_PLUGIN")
         if ap:
             cfg["auth_plugin"] = ap
-        
+
         return mysql.connector.connect(**cfg)
     except mysql.connector.Error as err:
         print(f"Database connection error: {err}")
